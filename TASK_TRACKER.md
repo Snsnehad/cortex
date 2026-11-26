@@ -10,7 +10,7 @@
 | Phase | Name | Status | Done / Total |
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
-| PHASE-01 | Dev environment & repo | IN_PROGRESS | 2 / 9 |
+| PHASE-01 | Dev environment & repo | IN_PROGRESS | 3 / 9 |
 | PHASE-02 | Database & backend foundation | NOT_STARTED | 0 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-01.03 — settings (pydantic-settings), env profiles, production validation, `.env.example`.
-**Next task:** TASK-01.04 (Docker Compose dev infra).
+**Current task:** TASK-01.04 — Docker Compose dev infra (PostgreSQL 17, Redis 7, Qdrant), health checks, volumes, ports on 127.0.0.1.
+**Next task:** TASK-01.05 (backend Dockerfile + api service).
 
 ## Known blockers
 
@@ -64,7 +64,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 |---|---|---|---|---|---|---|---|
 | TASK-01.01 | git init, ignore/attributes/editorconfig, initial commit | COMPLETED | 00.07 | .gitignore, .gitattributes, .editorconfig | `git check-ignore` matrix (18 must-ignore, 8 must-keep paths) | PASS 26/26 | Repo on `main`; repo-local personal identity (not the global work one); initial commit made. Push to personal GitHub tracked under B-04 |
 | TASK-01.02 | Backend scaffold (uv, package tree, ruff/mypy/pytest) | COMPLETED | 01.01 | backend/pyproject.toml, backend/uv.lock, backend/.python-version, backend/app/**/__init__.py (23 packages), backend/tests/** layout, docs/development/README.md | tests/unit/test_project_layout.py (25 cases: Python 3.12 pin, 23 packages importable + documented, no namespace packages) | ruff check PASS · ruff format --check PASS (32 files) · mypy --strict PASS (31 files) · pytest 25 passed · negative check: stray dir without __init__.py → test FAILED as intended | Dev tools only (ruff 0.17.6, mypy 2.4.1, pytest 9.2.0); runtime deps added by the task that first needs them. uv `link-mode=copy` (cache on C:, project on D:) |
-| TASK-01.03 | Settings + env profiles + `.env.example` | NOT_STARTED | 01.02 | | | | |
+| TASK-01.03 | Settings + env profiles + `.env.example` | COMPLETED | 01.02 | backend/app/config/settings.py, backend/app/config/__init__.py, .env.example, backend/pyproject.toml (pydantic deps + mypy plugin), docs/development/README.md, DECISIONS.md (ADR-016) | tests/unit/test_settings.py (28 cases) | ruff PASS · format PASS · mypy --strict PASS · pytest 53 passed (28 new) · negative checks: var removed from .env.example → sync test FAILED; real env CORTEX_ENVIRONMENT=production with dev defaults → startup refused; CORTEX_DATABSE__HOST typo → rejected | LLM default model `gpt-4o-mini` is a placeholder until P-1 (provider) is answered |
 | TASK-01.04 | Docker Compose dev infra with health checks | NOT_STARTED | 01.01 | | | | |
 | TASK-01.05 | Backend Dockerfile + api service | NOT_STARTED | 01.02, 01.04 | | | | |
 | TASK-01.06 | App factory + live/ready health | NOT_STARTED | 01.03 | | | | |

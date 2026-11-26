@@ -27,3 +27,20 @@ All tool configuration lives in `backend/pyproject.toml`.
 
 ### Windows notes
 - uv's cache is on C: and the project is on D:, so `link-mode = "copy"` is set in `pyproject.toml` (hardlinks cannot cross drives).
+
+## Configuration (TASK-01.03)
+
+Settings live in `backend/app/config/settings.py`; use them via `from app.config import get_settings`.
+
+- Every setting is a `CORTEX_*` environment variable; nested groups use `__`, e.g. `CORTEX_DATABASE__PASSWORD`. Lists are JSON: `CORTEX_CORS_ORIGINS=["http://localhost:5173"]`.
+- Local development: `Copy-Item .env.example .env` at the repo root. Real environment variables override `.env`.
+- **Unknown `CORTEX_*` variables are an error** (typo protection), from the environment or `.env`.
+- `staging` / `production` refuse to start with development defaults. The error lists every problem at once.
+- Secrets are `SecretStr`: they print as `**********`. Call `.get_secret_value()` only where the raw value is needed.
+- **Adding a setting:** add the field to the right group, document it in `.env.example` (commented `# CORTEX_...=` if optional), and add validation tests. `test_env_example_documents_every_setting_and_nothing_else` fails until `.env.example` matches.
+
+Generate a real secret for any shared environment:
+
+```powershell
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
+```

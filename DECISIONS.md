@@ -98,3 +98,9 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Status**: Accepted (2026-11-26)
 * **Context**: Celery does not officially support Windows.
 * **Decision**: API may run on the host for fast iteration, but worker and beat always run in Docker.
+
+### ADR-016 — Configuration: nested `CORTEX_*` variables, fail-fast validation
+* **Status**: Accepted (2026-11-26, TASK-01.03)
+* **Context**: Misconfiguration is a top cause of production incidents and secret leaks; typos in env var names are silently ignored by most settings libraries.
+* **Decision**: One `Settings` (pydantic-settings) with nested groups addressed as `CORTEX_<GROUP>__<FIELD>`. Secrets are `SecretStr`. Unknown `CORTEX_*` variables (env or `.env`) are rejected. In `staging`/`production` startup fails unless: non-default JWT secret ≥ 32 chars, non-default DB password, `debug=false`, explicit `https://` CORS origins, S3 storage, secure refresh cookie. `.env.example` is kept in sync by a test.
+* **Consequences**: A bad deployment fails at boot with a list of every problem instead of running insecurely. Adding a setting requires documenting it in `.env.example` (CI enforces).

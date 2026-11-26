@@ -48,6 +48,8 @@ Newest session first. Each entry is the handoff for the next session.
 - **TASK-01.02 COMPLETED** on branch `feat/TASK-01.02-backend-scaffold` (merged to `main`): `backend/pyproject.toml` (ruff, strict mypy, pytest config), `uv.lock`, 23 documented `app` packages, test layout. Commands: `uv add --dev ruff mypy pytest`, `uv run ruff check`, `uv run ruff format --check`, `uv run mypy`, `uv run pytest`. Results: all pass; pytest 25 passed; a deliberate stray folder without `__init__.py` made the layout test fail as intended (then removed).
 - Decision: no runtime dependencies yet; each is added by the task that first needs it. `uv link-mode=copy` because cache (C:) and project (D:) are on different drives.
 
-**Exact next task:** **TASK-01.03** — settings with pydantic-settings: env profiles (development/test/staging/production), nested groups, production refuses default secrets, `.env.example` with a test that every setting is listed.
+- **TASK-01.03 COMPLETED** (branch `feat/TASK-01.03-settings`, merged to `main`): `app/config/settings.py` with groups database, redis, qdrant, storage, auth, embeddings, llm, rag; `.env.example` at repo root. Added deps pydantic 2.14.4, pydantic-settings 2.16.3 + pydantic mypy plugin. Results: ruff/format/mypy pass, pytest 53 passed (28 new); negative checks all failed as intended (see tracker). New ADR-016.
+
+**Exact next task:** **TASK-01.04** — `infra/compose/docker-compose.yml`: postgres:17, redis:7, qdrant (pinned), health checks, named volumes, ports bound to 127.0.0.1; credentials matching `.env.example` defaults.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.
