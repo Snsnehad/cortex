@@ -66,6 +66,9 @@ Newest session first. Each entry is the handoff for the next session.
 
 - TASK-01.09 IN PROGRESS: `.github/workflows/ci.yml` written (actions SHA-pinned, read-only token), actionlint clean, pushed on branch `feat/TASK-01.09-ci`, PR #1 opened: https://github.com/Snsnehad/cortex/pull/1. Waiting for the first run.
 
-**Exact next task:** finish **TASK-01.09**: check PR #1 CI (`gh pr checks 1 --repo Snsnehad/cortex`). If red, fix on the branch. If green, merge (fast-forward main), confirm the run on main, mark TASK-01.09 + PHASE-01 COMPLETED. Then **TASK-02.01** (SQLAlchemy engine, session, Base).
+- **TASK-01.09 COMPLETED**: PR #1 CI green on db60f78 (Backend: 119 passed on Linux incl. integration; Image: healthy, uid 10001, JSON logs). PR #1 merged by fast-forward; main push run 45812054140 SUCCESS. Auto-fix could not be enabled (repo outside the session folder).
+- **PHASE-01 COMPLETED (9/9).**
+
+**Exact next task:** **PHASE-02 / TASK-02.01**: SQLAlchemy 2.0 async engine + session factory (psycopg 3, async + sync engines share the driver), declarative `Base` with constraint naming convention, UUID primary key + created_at/updated_at mixins, request-scoped session dependency, pool settings from `DatabaseSettings`. Remember: Windows needs the selector loop for psycopg async (ADR-018).
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

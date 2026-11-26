@@ -10,7 +10,7 @@
 | Phase | Name | Status | Done / Total |
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
-| PHASE-01 | Dev environment & repo | IN_PROGRESS | 8 / 9 |
+| PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
 | PHASE-02 | Database & backend foundation | NOT_STARTED | 0 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-01.09 — waiting for the first CI run on PR #1, then merge.
-**Next task:** PHASE-02 / TASK-02.01 (SQLAlchemy engine, session, Base).
+**Current task:** TASK-02.01 — SQLAlchemy 2.0 async engine + session factory (psycopg 3), declarative Base with naming conventions, UUID + timestamp mixins, session dependency.
+**Next task:** TASK-02.02 (Alembic async setup + migration round-trip test).
 
 ## Known blockers
 
@@ -70,7 +70,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-01.06 | App factory + live/ready health | COMPLETED | 01.03 | app/main.py, app/api/v1/{router,health}.py, app/services/health.py, app/dependencies/{health,settings}.py, app/schemas/health.py, tests/conftest.py; settings + .env.example (127.0.0.1 defaults); README, docs/development, DECISIONS (ADR-018) | tests/unit/test_health_service.py (7), tests/unit/test_health_api.py (6), tests/integration/test_health_ready.py (2) | ruff PASS · mypy --strict PASS · pytest 68 passed (15 new, incl. 2 integration vs live stack) · manual uvicorn run: all up 200 → redis stopped 503 (timeout) → restarted 200 → postgres stopped 503 → restarted 200; /live stays 200 | Found + fixed 2 Windows issues (ADR-018): localhost→127.0.0.1 (10 s → 24 ms), selector loop for psycopg. Readiness runs ~2 s when a port is refused on Windows (bounded by timeout) |
 | TASK-01.07 | Structured logging + request id + redaction | COMPLETED | 01.06 | app/core/logging.py, app/middleware/request_context.py, app/main.py, app/config/settings.py (log_format), .env.example, docs/development/README.md | tests/unit/test_logging.py (39 incl. parametrised), tests/unit/test_request_context.py (12) | ruff PASS · mypy PASS · pytest 119 passed · container: 0 non-JSON lines (uvicorn included), client X-Request-ID echoed + logged, generated id on 404, query-string api_key absent from logs, no uvicorn.access duplicates, health probes not at INFO, no ANSI color_message | Fixed during task: handler now resolves sys.stdout per record (stale closed stream otherwise); Redis-style empty-user URL credentials redacted; uvicorn color_message dropped. Unhandled exceptions may also be logged by uvicorn without request_id until TASK-02.06 |
 | TASK-01.08 | Dev PowerShell scripts | COMPLETED | 01.04 | scripts/dev.ps1, scripts/dev.cmd, README.md (local setup), docs/development/README.md | Manual run of every command via dev.cmd from an unrelated folder (PS 5.1) | help OK · unknown command → exit 2 · ps OK · logs redis OK · lint OK · test -m "not integration" → 117 passed, 2 deselected · test -p no:cacheprovider -k settings → 29 passed (-p not captured) · test -k nonexistent → pytest exit 5 → script exit 1 · check → 119 passed · up -App → api healthy, ready 200 · down → exit 0, 0 containers · up → data marker survived · api on host → ready 200, process tree stopped · format → no changes · reset: wrong answer and EOF both abort with exit 1, volumes intact · .ps1 blocked under Restricted, dev.cmd works | `migrate` deferred to TASK-02.02 (Alembic). Real reset (down -v) intentionally not executed (destructive) |
-| TASK-01.09 | GitHub Actions CI | IN_PROGRESS | 01.02–01.07 | .github/workflows/ci.yml, README.md (badge), docs/development/README.md | Workflow itself; actionlint 1.7.12 (incl. shellcheck) | actionlint PASS (after fixing 2 SC2034 warnings) · first GitHub run: pending on PR #1 | Remaining: green run on PR #1 (https://github.com/Snsnehad/cortex/pull/1), then merge to main and confirm the main-branch run |
+| TASK-01.09 | GitHub Actions CI | COMPLETED | 01.02–01.07 | .github/workflows/ci.yml, README.md (badge), docs/development/README.md | Workflow itself; actionlint 1.7.12 (incl. shellcheck) | actionlint PASS (after fixing 2 SC2034 warnings) · PR #1 run 45810619558 on db60f78: Backend PASS (119 passed on Linux incl. integration vs service containers), Docker image PASS (healthy, uid 10001, logs all JSON) · older run cancelled by concurrency as designed · PR #1 merged (fast-forward) · main push run 45812054140: SUCCESS (both jobs) | Auto-fix could not be enabled (Cortex repo is outside this session's folder); CI run time ~45 s |
 
 ### PHASE-02 — Database & backend foundation
 
