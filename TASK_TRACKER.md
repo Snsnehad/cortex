@@ -12,7 +12,7 @@
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
 | PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
-| PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
+| PHASE-03 | Auth & multi-tenancy | IN_PROGRESS | 1 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
 | PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** PHASE-03 / TASK-03.01 — Argon2id password hashing (rehash on login if parameters change) + password policy.
-**Next task:** TASK-03.02 (JWT access tokens).
+**Current task:** TASK-03.02 — JWT access tokens (claims, expiry, leeway, typ check, pinned algorithm).
+**Next task:** TASK-03.03 (rotating refresh tokens + reuse detection).
 
 ## Known blockers
 
@@ -89,7 +89,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
-| TASK-03.01 | Password hashing + policy | NOT_STARTED | 02.08 | | | | |
+| TASK-03.01 | Password hashing + policy | COMPLETED | 02.08 | app/core/passwords.py, backend/pyproject.toml (pwdlib[argon2] 0.4.2, argon2-cffi 25.1.0), DECISIONS.md (ADR-021), docs/development/README.md | tests/unit/test_passwords.py (27) | ruff · mypy · pytest 308 passed · Argon2id m=19 MiB t=2 p=1 (hash format asserted) · salted · rehash-on-login when parameters change (and never on a wrong password) · NFKC: fullwidth and combining forms verify · corrupt/foreign hashes → invalid, no crash · dummy_verify within 0.5–2× of a real verify · async hashing keeps the event loop responsive · NIST-style policy incl. boundaries 12/128 · measured ≈53 ms per hash (default ≈116 ms) | Breached-password check (HIBP) noted as a possible enhancement. Fixed in passing: invisible/look-alike Unicode in test source now written as \u escapes |
 | TASK-03.02 | JWT access tokens | NOT_STARTED | 01.03 | | | | |
 | TASK-03.03 | Rotating refresh tokens + reuse detection | NOT_STARTED | 02.03, 03.02 | | | | |
 | TASK-03.04 | Auth endpoints | NOT_STARTED | 03.01–03.03 | | | | |

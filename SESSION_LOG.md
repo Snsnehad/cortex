@@ -108,6 +108,12 @@ Newest session first. Each entry is the handoff for the next session.
 - Verified: random order is real (same seed = same order, different seeds differ, 3 shuffled full runs green); unit tests pass with PostgreSQL stopped.
 - Slip: my first seed-capture script used `-q`, which hides the seed header; re-checked ordering explicitly with `--collect-only` per seed.
 
-**Exact next task:** **PHASE-03 / TASK-03.01**: `uv add "pwdlib[argon2]"`; `app/core/security/passwords.py` (or `app/core/passwords.py`): hash/verify with Argon2id, `needs_rehash` → rehash on successful login, password policy (≥ 12 chars, not equal to the email, max length to bound hashing cost, e.g. 128) returning ValidationFailedError with field details; constant-time behaviour on unknown users is handled in 03.04 (dummy verify). Unit tests: verify ok / wrong password, policy violations, rehash when parameters change, hashes are salted (same password → different hash).
+- TASK-02.08 CI on main: run 45824482568 SUCCESS (281 passed, random seed 2021584766). PHASE-02 done.
+- **TASK-03.01 COMPLETED**: `app/core/passwords.py` (PasswordHasher: Argon2id m=19 MiB t=2 p=1, verify_and_update → rehash on login, NFKC, dummy_verify, *_async via worker thread; password_policy_violations / validate_password → 422 PASSWORD_POLICY with field errors). ADR-021. Measured ≈53 ms per hash (library default ≈116 ms). 308 tests passed.
+- Library default checked before use: pwdlib's Argon2 defaults to 64 MiB/t=3/p=4, so parameters are explicit.
+- Pitfall found and fixed: `\uXXXX` escapes I write are decoded into literal characters by the editing tools, which put invisible combining accents and full-width look-alikes into test source (ruff RUF001 flagged them; mypy crashed once on that file). Look-alikes are now real `\u` escapes, written via a script that builds the backslash with chr(92). Added a guard that the Unicode test inputs truly differ, so the test can't pass trivially.
+- My bug: `await` inside a generator expression made an async generator; caught by mypy and the test.
+
+**Exact next task:** **TASK-03.02**: `uv add pyjwt`; `app/core/tokens.py`: issue/verify access JWT (HS256 pinned; claims sub, iat, exp, jti, typ="access"; TTL from settings; small leeway), verification rejects expired, tampered, wrong typ, alg=none, other algorithms, missing claims → AuthenticationError (401). Unit tests for each, plus "secret never in logs/repr".
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

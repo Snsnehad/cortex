@@ -334,3 +334,24 @@ result = await fetch_page(session, stmt, NEWEST_FIRST, page=page, codec=codec,
 - Tenant isolation comes from the query's `WHERE organization_id = …`, never from the cursor.
 - Every cursor problem (tampered, too long, wrong listing, garbage) → **400 `INVALID_CURSOR`**; `limit` out of range → 422.
 - Known follow-up (TASK-14.06): indexes are `(…, created_at DESC)` without `id`, so Postgres adds a small incremental sort to break timestamp ties. Add `id DESC` to the index if measurements show large tie groups.
+
+## Passwords (TASK-03.01, ADR-021)
+
+`app/core/passwords.py`:
+
+```python
+from app.core.passwords import PasswordHasher, validate_password
+
+hasher = PasswordHasher()
+validate_password(raw, email=email)            # raises ValidationFailedError(422, PASSWORD_POLICY)
+stored = await hasher.hash_async(raw)          # "$argon2id$v=19$m=19456,t=2,p=1$..."
+result = await hasher.verify_async(raw, stored)
+if result.valid and result.new_hash:           # parameters changed since the hash was made
+    user.password_hash = result.new_hash       # transparent upgrade on login
+await hasher.dummy_verify_async(raw)           # unknown email: same timing as a real check
+```
+
+- Argon2id m=19 MiB, t=2, p=1: ~53 ms per hash or verify on the dev machine.
+- **Always use the `*_async` methods from async code.** Hashing is CPU-bound and would otherwise stall the event loop for every other request (a test proves the async path keeps the loop responsive).
+- Policy: 12 to 128 characters, not only whitespace, not the email or its local part. No "must contain a symbol" rules (NIST SP 800-63B). Input is NFKC-normalised, so equivalent Unicode forms match.
+- A corrupt or foreign hash in the database verifies as `False`; it never crashes a login.
