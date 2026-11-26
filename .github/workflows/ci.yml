@@ -1,0 +1,154 @@
+# Cortex CI (TASK-01.09)
+#
+# backend: lint, format check, strict mypy, and the full pytest suite, including integration
+#          tests against real PostgreSQL / Redis / Qdrant service containers. They use the
+#          same image versions and host ports as infra/compose/docker-compose.yml, so the app's
+#          default settings work unchanged.
+# image:   builds the production Docker image, then smoke-tests it with the same hardening
+#          flags as compose (read-only FS, no capabilities, non-root).
+#
+# Third-party actions are pinned to full commit SHAs (tags can be moved); the version is in
+# the trailing comment.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: the workflow only needs to read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR cancels the outdated run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.6"
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:17.12-alpine
+        env:
+          POSTGRES_USER: cortex
+          POSTGRES_PASSWORD: cortex
+          POSTGRES_DB: cortex
+        ports: ["15432:5432"]
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U cortex -d cortex"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7.4.12-alpine
+        ports: ["16379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      qdrant:
+        # No health option: the image has no curl/wget. Readiness is awaited in a step below.
+        image: qdrant/qdrant:v1.20.2-unprivileged
+        env:
+          QDRANT__TELEMETRY_DISABLED: "true"
+        ports: ["16333:6333"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github
+
+      - name: Ruff format check
+        run: uv run ruff format --check
+
+      - name: Mypy (strict)
+        run: uv run mypy
+
+      - name: Wait for Qdrant
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:16333/readyz > /dev/null; then
+              echo "Qdrant ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Qdrant did not become ready"; exit 1
+
+      - name: Pytest (unit + integration)
+        run: uv run pytest -ra
+
+  image:
+    name: Docker image (build + smoke test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build backend image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          load: true
+          push: false
+          tags: cortex-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (hardened run, health check, non-root, no dev tools)
+        run: |
+          set -euo pipefail
+          docker run -d --name api \
+            --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            cortex-backend:ci
+
+          for _ in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' api)
+            echo "health: $status"
+            [ "$status" = "healthy" ] && break
+            [ "$status" = "unhealthy" ] && { docker logs api; exit 1; }
+            sleep 2
+          done
+          [ "$(docker inspect -f '{{.State.Health.Status}}' api)" = "healthy" ] || { docker logs api; exit 1; }
+
+          uid=$(docker exec api id -u)
+          echo "uid: $uid"
+          [ "$uid" = "10001" ]
+
+          if docker exec api python -c "import pytest" 2>/dev/null; then
+            echo "dev dependency pytest found in runtime image"; exit 1
+          fi
+
+          # Every log line must be JSON (TASK-01.07)
+          docker logs api 2>&1 | python3 -c "import json,sys; [json.loads(l) for l in sys.stdin if l.strip()]; print('logs: all JSON')"
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f api || true
