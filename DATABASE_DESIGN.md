@@ -130,7 +130,7 @@ Constraints & indexes:
 | id | uuid PK | deterministic `uuid5(document_id, "{profile}:{chunk_index}")`; = Qdrant point id |
 | organization_id | uuid NOT NULL | |
 | knowledge_base_id | uuid NOT NULL | |
-| document_id | uuid FK documents ON DELETE CASCADE | |
+| document_id | uuid NOT NULL | composite FK `(document_id, knowledge_base_id, organization_id)` → `documents (id, knowledge_base_id, organization_id)` ON DELETE CASCADE |
 | embedding_profile | varchar(120) NOT NULL | |
 | chunk_index | int NOT NULL | 0-based order in document |
 | text | text NOT NULL | cleaned chunk text (source for context + citations) |
@@ -140,7 +140,9 @@ Constraints & indexes:
 | section_path | varchar(1000) NULL | heading breadcrumb, e.g. `Chapter 2 > Pricing` |
 | content_hash | char(64) NOT NULL | SHA-256 of text; enables skip-unchanged re-embedding |
 | indexed_at | timestamptz NULL | set after Qdrant upsert succeeds |
-| created_at | timestamptz | |
+| created_at / updated_at | timestamptz | |
+
+The `id` has **no default**: it must come from `chunk_id()`. A missing id is refused by the ORM (warning, an error under our policy) and by PostgreSQL (NOT NULL). CHECKs: `chunk_index >= 0`, `token_count > 0`, `char_end > char_start >= 0`, `page_start IS NULL OR (page_start >= 1 AND page_end >= page_start)`.
 
 Indexes: `UNIQUE (document_id, embedding_profile, chunk_index)`, `ix (organization_id, knowledge_base_id)`. Hydration after vector search is `WHERE organization_id = :org AND id = ANY(:ids)` (PK lookup + tenant re-check).
 
@@ -149,7 +151,7 @@ Indexes: `UNIQUE (document_id, embedding_profile, chunk_index)`, `ix (organizati
 |---|---|---|
 | id | uuid PK | |
 | organization_id | uuid NOT NULL | |
-| document_id | uuid FK documents ON DELETE CASCADE | |
+| document_id | uuid NOT NULL | composite FK `(document_id, organization_id)` → `documents (id, organization_id)` ON DELETE CASCADE |
 | job_type | varchar(16) CHECK IN ('INGEST','REINDEX','DELETE') | |
 | status | varchar(16) CHECK IN ('QUEUED','RUNNING','RETRYING','SUCCEEDED','FAILED','CANCELLED') | |
 | stage | varchar(16) NULL | `EXTRACTING`,`CHUNKING`,`EMBEDDING`,`INDEXING` — drives UI progress |
@@ -227,7 +229,7 @@ Indexes: `ix (organization_id, created_at)`, `ix (organization_id, event_type, c
 
 ## 4. Integrity rules worth calling out
 
-1. **Composite tenant FKs**: `documents`, `conversations` reference `knowledge_bases (id, organization_id)`. Chunks and jobs inherit `organization_id` from their document and are written only by the worker, which copies it from the document row.
+1. **Composite tenant FKs** (strengthened in TASK-02.04): `documents` (and later `conversations`) reference `knowledge_bases (id, organization_id)`; `processing_jobs` reference `documents (id, organization_id)`; `document_chunks` reference `documents (id, knowledge_base_id, organization_id)`, so a chunk's tenant **and** knowledge base (its vector-search filter) always match its document's. The original design trusted the worker to copy these values; now the database enforces them. Cost: two extra unique indexes on `documents`. Proven necessary: with a plain single-column FK, a document *can* be attached to another tenant's knowledge base (the test fails). PostgreSQL's 63-character name limit shortens the chunk FK to `fk_document_chunks_document_id_knowledge_base_id_organi_69b1` (deterministic hash suffix).
 2. **One active job per document** via partial unique index — the database, not application logic, prevents concurrent processing.
 3. **No duplicate active documents per KB** via partial unique index — race-safe even if two uploads of the same file arrive concurrently (the loser gets a constraint violation mapped to 409).
 4. **Deterministic chunk ids** make chunk insertion and Qdrant upserts idempotent.

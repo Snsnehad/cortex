@@ -4,13 +4,16 @@
 * ``migrated_database_url``: one scratch database per test session, built by running the
   real Alembic migrations, so model tests exercise exactly the schema production gets
   (not ``metadata.create_all()``, which could hide a broken migration).
+* ``db_engine`` / ``session_factory``: async access to the migrated database; every table is
+  truncated after each test, so tests never see each other's rows.
 
 Scratch databases are dropped WITH (FORCE) afterwards; the development database is never
-touched. Fixtures here are synchronous because Alembic commands call ``asyncio.run``.
+touched. The database-creating fixtures are synchronous because Alembic commands call
+``asyncio.run``.
 """
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -19,8 +22,18 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from psycopg import sql
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
+import app.models  # noqa: F401  (every table on Base.metadata)
 from app.config import Settings
+from app.database.base import Base
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
@@ -67,3 +80,19 @@ def migrated_database_url() -> Iterator[str]:
     with scratch_database("cortex_modeltest") as url:
         command.upgrade(make_alembic_config(url), "head")
         yield url
+
+
+@pytest.fixture
+async def db_engine(migrated_database_url: str) -> AsyncIterator[AsyncEngine]:
+    # NullPool: every test runs on its own event loop; pooled connections must not outlive it.
+    engine = create_async_engine(migrated_database_url, poolclass=NullPool)
+    yield engine
+    tables = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
+    async with engine.begin() as conn:
+        await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+    await engine.dispose()
+
+
+@pytest.fixture
+def session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(db_engine, expire_on_commit=False)

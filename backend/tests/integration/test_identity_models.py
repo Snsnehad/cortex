@@ -5,62 +5,23 @@ so these tests verify what production gets, including database-enforced rules.
 """
 
 import uuid
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError, InvalidRequestError, StatementError
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
-from sqlalchemy.pool import NullPool
 
 from app.models import Organization, OrganizationMembership, OrgRole, RefreshToken, User
+from tests.integration.db_helpers import (
+    add_all_and_commit,
+    new_org,
+    new_user,
+    violated_constraint,
+)
 
 pytestmark = [pytest.mark.anyio, pytest.mark.integration]
-
-
-@pytest.fixture
-async def engine(migrated_database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(migrated_database_url, poolclass=NullPool)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("TRUNCATE users, organizations, organization_memberships, refresh_tokens CASCADE")
-        )
-    await engine.dispose()
-
-
-@pytest.fixture
-def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(engine, expire_on_commit=False)
-
-
-def new_user(email: str = "alice@example.com") -> User:
-    return User(email=email, password_hash="argon2-hash-placeholder", full_name="Alice")
-
-
-def new_org(slug: str = "acme", creator: User | None = None) -> Organization:
-    return Organization(
-        name=slug.title(), slug=slug, created_by_user_id=creator.id if creator else None
-    )
-
-
-def violated_constraint(exc: IntegrityError) -> str | None:
-    """Name of the constraint PostgreSQL reported, proving *which* rule fired."""
-    diag = getattr(exc.orig, "diag", None)
-    return getattr(diag, "constraint_name", None)
-
-
-async def add_all_and_commit(factory: async_sessionmaker[AsyncSession], *objs: object) -> None:
-    async with factory() as session:
-        session.add_all(objs)
-        await session.commit()
 
 
 # --- users --------------------------------------------------------------------------------
