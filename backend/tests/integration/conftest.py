@@ -5,11 +5,13 @@
   real Alembic migrations, so model tests exercise exactly the schema production gets
   (not ``metadata.create_all()``, which could hide a broken migration).
 * ``db_engine`` / ``session_factory``: async access to the migrated database; every table is
-  truncated after each test, so tests never see each other's rows.
+  emptied after each test, so tests never see each other's rows.
+* ``test_settings`` / ``api_app`` / ``api_client``: the real application, wired to the
+  migrated scratch database, driven in-process over httpx.
 
 Scratch databases are dropped WITH (FORCE) afterwards; the development database is never
 touched. The database-creating fixtures are synchronous because Alembic commands call
-``asyncio.run``.
+``asyncio.run``. Full guide: docs/testing/README.md.
 """
 
 import uuid
@@ -17,23 +19,25 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import httpx
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
 from psycopg import sql
-from sqlalchemy import text
+from sqlalchemy import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
 
 import app.models  # noqa: F401  (every table on Base.metadata)
 from app.config import Settings
 from app.database.base import Base
+from app.main import create_app
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
@@ -84,15 +88,62 @@ def migrated_database_url() -> Iterator[str]:
 
 @pytest.fixture
 async def db_engine(migrated_database_url: str) -> AsyncIterator[AsyncEngine]:
-    # NullPool: every test runs on its own event loop; pooled connections must not outlive it.
-    engine = create_async_engine(migrated_database_url, poolclass=NullPool)
+    # A normal connection pool, scoped to ONE test: connections are reused across the
+    # several sessions a test opens (a new connection costs ~33 ms), and the pool is disposed
+    # before the test's event loop closes, so no connection outlives its loop.
+    engine = create_async_engine(migrated_database_url, pool_size=5, max_overflow=5)
     yield engine
-    tables = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
-    async with engine.begin() as conn:
-        await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+    await clear_all_tables(engine)
     await engine.dispose()
+
+
+_CLEAR_ALL_SQL = "; ".join(
+    # Table names come from our own model metadata, never from input.
+    f'DELETE FROM "{table.name}"'  # noqa: S608
+    for table in reversed(Base.metadata.sorted_tables)
+)
+
+
+async def clear_all_tables(engine: AsyncEngine) -> None:
+    """Remove every committed row (children first) in one round trip.
+
+    Tests commit for real (several need separate concurrent transactions, e.g. the upload
+    race test), so savepoint rollback is not an option. DELETE beats TRUNCATE here: TRUNCATE
+    has a fixed per-table cost (new files under an exclusive lock) that dominates when each
+    test leaves only a handful of rows. Measured in TASK-02.08 (12 tables, pooled
+    connection): TRUNCATE 60 ms, DELETE one-by-one 29 ms.
+    """
+    async with engine.begin() as conn:
+        # Several statements, no parameters: psycopg sends them as one simple query.
+        await conn.exec_driver_sql(_CLEAR_ALL_SQL)
 
 
 @pytest.fixture
 def session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(db_engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def test_settings(migrated_database_url: str) -> Settings:
+    """Application settings pointing at the migrated scratch database (credentials from the
+    environment / .env, exactly like the developer's own setup)."""
+    base = Settings()
+    scratch_name = make_url(migrated_database_url).database
+    return base.model_copy(
+        update={"database": base.database.model_copy(update={"name": scratch_name})}
+    )
+
+
+@pytest.fixture
+async def api_app(test_settings: Settings, db_engine: AsyncEngine) -> AsyncIterator[FastAPI]:
+    # Depends on db_engine so the tables are emptied after the test.
+    application = create_app(test_settings)
+    yield application
+    await application.state.db_engine.dispose()
+
+
+@pytest.fixture
+async def api_client(api_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    transport = httpx.ASGITransport(app=api_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client

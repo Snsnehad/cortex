@@ -102,6 +102,12 @@ Newest session first. Each entry is the handoff for the next session.
 - Query plan checked in a rolled-back transaction with 20k rows: page 1 and a ~9,000-deep page each read 22 index rows. Follow-up recorded on TASK-14.06: incremental sort on id for timestamp ties.
 - My test slip: set pydantic `from_attributes` after class creation (no effect); now declared in the class.
 
-**Exact next task:** **TASK-02.08** (test harness): most of it exists (scratch DB per test, session-scoped migrated DB, truncate-all fixtures, AnyIO selector loop on Windows). Remaining per the plan: per-test isolation strategy review (truncate vs savepoint rollback; measure), model factories, verify the suite in random order (add pytest-randomly), and document the harness in docs/testing/. Then PHASE-03 begins with TASK-03.01 (Argon2id password hashing).
+- TASK-02.07 CI on main: run 45822653574 SUCCESS (276 passed).
+- **TASK-02.08 COMPLETED → PHASE-02 COMPLETED (8/8).** pytest-randomly 5.1.0 (always on; seed printed), integration auto-marker by folder, `factories.py`, `test_settings` / `api_app` / `api_client` fixtures on the migrated scratch DB, `test_harness.py`, docs/testing/README.md. 281 tests passed.
+- Isolation measured instead of assumed: TRUNCATE 60 ms vs DELETE 29 ms (12 tables), but the larger cost was NullPool opening a new connection (33 ms) for every session. A per-test pool plus one-round-trip DELETE took the integration suite from ~43 s to ~28 s. Savepoint rollback rejected: the concurrency tests need separate committed transactions.
+- Verified: random order is real (same seed = same order, different seeds differ, 3 shuffled full runs green); unit tests pass with PostgreSQL stopped.
+- Slip: my first seed-capture script used `-q`, which hides the seed header; re-checked ordering explicitly with `--collect-only` per seed.
+
+**Exact next task:** **PHASE-03 / TASK-03.01**: `uv add "pwdlib[argon2]"`; `app/core/security/passwords.py` (or `app/core/passwords.py`): hash/verify with Argon2id, `needs_rehash` → rehash on successful login, password policy (≥ 12 chars, not equal to the email, max length to bound hashing cost, e.g. 128) returning ValidationFailedError with field details; constant-time behaviour on unknown users is handled in 03.04 (dummy verify). Unit tests: verify ok / wrong password, policy violations, rehash when parameters change, hashes are salted (same password → different hash).
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

@@ -11,7 +11,7 @@
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
-| PHASE-02 | Database & backend foundation | IN_PROGRESS | 7 / 8 |
+| PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-02.08 — test harness (much already exists; this task completes and documents it).
-**Next task:** PHASE-03 / TASK-03.01 (password hashing).
+**Current task:** PHASE-03 / TASK-03.01 — Argon2id password hashing (rehash on login if parameters change) + password policy.
+**Next task:** TASK-03.02 (JWT access tokens).
 
 ## Known blockers
 
@@ -83,7 +83,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-02.05 | Conversations/messages/citations/usage_events | COMPLETED | 02.04 | app/models/{conversation,usage_event,__init__}.py, app/database/base.py (CreatedAtMixin), migrations/versions/20261126_1222-ba17b2b568e9_create_conversations_messages_citations_usage_events.py, tests/unit/test_database_base.py, DATABASE_DESIGN.md, DECISIONS.md (ADR-020) | tests/integration/test_chat_models.py (16) | ruff · mypy · pytest 214 passed · migration safety net passes on 3 revisions · drift test caught Float(24) vs REAL → fixed in model and migration · exact Decimal sums (10×0.1 + 0.000123 = 1.000123), micro-dollar rounding · mutation proof: plain user FK lets a non-member own a conversation (test FAILS); CASCADE citations vanish with their document (test FAILS); restored byte-identical | Design strengthened: conversation ownership tied to membership (ADR-020, open to veto). Dev DB at ba17b2b568e9 |
 | TASK-02.06 | Exceptions + error envelope | COMPLETED | 01.06 | app/core/errors.py, app/api/errors.py, app/schemas/errors.py, app/middleware/request_context.py (generic 500 inside the request context, no re-raise), app/main.py, docs/development/README.md | tests/unit/test_error_handling.py (27) | ruff · mypy · pytest 241 passed · every domain error → status + envelope; Retry-After / WWW-Authenticate; 404 / 405 (+Allow) / route HTTPException / 422 envelopes; 422 never echoes the submitted password; 500 leaks no exception text, URL or traceback · real uvicorn: 1 structured traceback with request_id, 0 uvicorn duplicates, 0 plain-text tracebacks, secret redacted | Closes the TASK-01.07 known gap (duplicate uvicorn traceback). Failures after the response started are logged once and re-raised so the server aborts the stream (tested) |
 | TASK-02.07 | Keyset pagination | COMPLETED | 02.01 | app/core/pagination.py (signed CursorCodec, InvalidCursorError), app/repositories/pagination.py (KeysetOrder, apply_keyset, fetch_page, PageRequest), app/schemas/pagination.py (Page[T]), app/dependencies/pagination.py (PageParams, CursorCodecDep), app/core/errors.py + app/api/errors.py (BadRequestError → 400), app/main.py (codec on app.state), docs/development/README.md | tests/unit/test_pagination_cursor.py (21), tests/integration/test_pagination.py (14) | ruff · mypy · pytest 276 passed · 45 rows with identical created_at paged exactly once in order · inserts between pages: no duplicates/skips (OFFSET would repeat 4) · cursor row deleted: next page correct · tampered/forged/foreign-scope/foreign-secret/garbage/over-long cursors → 400 INVALID_CURSOR · limit 0/101/abc → 422 · EXPLAIN ANALYZE on 20k rows (rolled-back txn): page 1 and ~9,000-deep page each read 22 index rows | Cursors signed (HMAC-SHA256, derived key), not encrypted. Follow-up noted for TASK-14.06: add id DESC to the created_at indexes if tie groups get large (incremental sort observed) |
-| TASK-02.08 | Test harness (DB, rollback, factories, client) | NOT_STARTED | 02.02 | | | | |
+| TASK-02.08 | Test harness (DB, rollback, factories, client) | COMPLETED | 02.02 | tests/conftest.py (auto `integration` marker by folder), tests/integration/conftest.py (per-test pooled engine, one-round-trip DELETE cleanup, test_settings / api_app / api_client), tests/integration/factories.py, backend/pyproject.toml (pytest-randomly), docs/testing/README.md | tests/integration/test_harness.py (5) | ruff · mypy · pytest 281 passed · 3 full random-order runs passed · same seed → same order, different seeds → different orders · unit tests pass with PostgreSQL stopped (190 in ~8 s) · api_client proven to use the scratch DB · measured cleanup: TRUNCATE 60 ms vs DELETE 29 ms; NullPool new connection 33 ms per session → integration suite ~43 s → ~28 s | Decision: real commits + DELETE cleanup instead of savepoint rollback, because concurrency tests need separate transactions (documented with measurements) |
 
 ### PHASE-03 — Auth & multi-tenancy
 
