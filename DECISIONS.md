@@ -104,3 +104,9 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Context**: Misconfiguration is a top cause of production incidents and secret leaks; typos in env var names are silently ignored by most settings libraries.
 * **Decision**: One `Settings` (pydantic-settings) with nested groups addressed as `CORTEX_<GROUP>__<FIELD>`. Secrets are `SecretStr`. Unknown `CORTEX_*` variables (env or `.env`) are rejected. In `staging`/`production` startup fails unless: non-default JWT secret ≥ 32 chars, non-default DB password, `debug=false`, explicit `https://` CORS origins, S3 storage, secure refresh cookie. `.env.example` is kept in sync by a test.
 * **Consequences**: A bad deployment fails at boot with a list of every problem instead of running insecurely. Adding a setting requires documenting it in `.env.example` (CI enforces).
+
+### ADR-017 — Dedicated local host-port block for Cortex
+* **Status**: Accepted (2026-11-26, TASK-01.04)
+* **Context**: The development machine runs other projects whose containers bind the default ports (a work Redis on 6379, Qdrant on 6333, several Postgres instances). Stopping them is not acceptable.
+* **Decision**: Cortex binds host ports 15432 (Postgres), 16379 (Redis), 16333/16334 (Qdrant), all on 127.0.0.1 only. Inside Docker the standard ports are unchanged. Backend defaults and `.env.example` use these ports. The Postgres host port follows `CORTEX_DATABASE__PORT`.
+* **Consequences**: Cortex runs side by side with other projects. Deployed environments are unaffected (they set URLs explicitly).

@@ -44,3 +44,37 @@ Generate a real secret for any shared environment:
 ```powershell
 uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
+
+## Local infrastructure (TASK-01.04)
+
+`infra/compose/docker-compose.yml` runs PostgreSQL, Redis and Qdrant. Run commands from the repo root.
+
+| Service | Image (pinned) | Host port (127.0.0.1 only) | Health check |
+|---|---|---|---|
+| PostgreSQL | `postgres:17.12-alpine` | 15432 → 5432 | `pg_isready` over TCP |
+| Redis | `redis:7.4.12-alpine` | 16379 → 6379 | `redis-cli ping` |
+| Qdrant | `qdrant/qdrant:v1.20.2-unprivileged` (non-root) | 16333 → 6333 (HTTP), 16334 → 6334 (gRPC) | HTTP 200 from `/readyz` |
+
+```powershell
+docker compose -f infra/compose/docker-compose.yml up -d --wait     # start, wait until healthy
+docker compose -f infra/compose/docker-compose.yml ps               # status
+docker compose -f infra/compose/docker-compose.yml logs -f qdrant   # follow logs
+docker compose -f infra/compose/docker-compose.yml down             # stop, KEEP data
+```
+
+Add `--env-file .env` once you have a root `.env`, so the containers use the same credentials and Postgres port as the backend.
+
+**Why ports 15432 / 16379 / 16333:** other local projects already use the defaults (5432, 6379, 6333) on this machine. Inside Docker the services keep their standard ports. The backend defaults and `.env.example` point at these host ports.
+
+**Configuration choices**
+- Postgres preloads `pg_stat_statements` (query statistics for TASK-14.06) and logs statements slower than 500 ms.
+- Redis uses append-only persistence and `noeviction`, so queued jobs are never silently dropped when memory is full.
+- Qdrant telemetry is disabled. Its image has no curl/wget, so the health check speaks HTTP through bash's `/dev/tcp`.
+- Data lives in named volumes `cortex_postgres_data`, `cortex_redis_data`, `cortex_qdrant_data`.
+
+**Destructive (deletes all local data; ask first / confirm):**
+```powershell
+docker compose -f infra/compose/docker-compose.yml down -v
+```
+
+**Troubleshooting:** `ports are not available … bind` means another process holds the port. Find it with `netstat -ano | Select-String ":16379\s"`, or change the Postgres host port with `CORTEX_DATABASE__PORT` in `.env`.

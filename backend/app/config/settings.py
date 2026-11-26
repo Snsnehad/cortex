@@ -45,7 +45,7 @@ class Environment(StrEnum):
 
 class DatabaseSettings(BaseModel):
     host: str = "localhost"
-    port: int = Field(default=5432, ge=1, le=65535)
+    port: int = Field(default=15432, ge=1, le=65535)  # Cortex compose host port
     user: str = "cortex"
     password: SecretStr = SecretStr(DEV_DATABASE_PASSWORD)
     name: str = "cortex"
@@ -62,11 +62,11 @@ class DatabaseSettings(BaseModel):
 
 
 class RedisSettings(BaseModel):
-    url: SecretStr = SecretStr("redis://localhost:6379/0")
+    url: SecretStr = SecretStr("redis://localhost:16379/0")  # Cortex compose host port
 
 
 class QdrantSettings(BaseModel):
-    url: str = "http://localhost:6333"
+    url: str = "http://localhost:16333"  # Cortex compose host port
     api_key: SecretStr | None = None
     collection_prefix: str = Field(default="cortex_", pattern=r"^[a-z][a-z0-9_]*$")
     timeout_seconds: float = Field(default=10.0, gt=0)

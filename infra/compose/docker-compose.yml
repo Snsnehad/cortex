@@ -1,0 +1,103 @@
+# Cortex — local development infrastructure (TASK-01.04)
+#
+# Run from the repository root:
+#   docker compose -f infra/compose/docker-compose.yml up -d --wait
+# With a root .env (credentials/ports), add:  --env-file .env
+#
+# Credentials and ports are read from the same CORTEX_* variables the backend uses, with
+# defaults that match .env.example, so the app and the containers always agree.
+# Ports are bound to 127.0.0.1 only: nothing here is reachable from your network.
+# Host ports use a Cortex-specific block (15432, 16379, 16333/16334) so they never clash
+# with other local projects on the default 5432 / 6379 / 6333; inside Docker the
+# services keep their standard ports.
+# Application services (api, worker, beat) are added in TASK-01.05 / TASK-05.06.
+
+name: cortex
+
+services:
+  postgres:
+    image: postgres:17.12-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CORTEX_DATABASE__USER:-cortex}
+      POSTGRES_PASSWORD: ${CORTEX_DATABASE__PASSWORD:-cortex}
+      POSTGRES_DB: ${CORTEX_DATABASE__NAME:-cortex}
+    command:
+      - postgres
+      # Query statistics for bottleneck analysis (TASK-14.06)
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      # Log statements slower than 500 ms
+      - -c
+      - log_min_duration_statement=500
+    ports:
+      - "127.0.0.1:${CORTEX_DATABASE__PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Checks over TCP (-h 127.0.0.1) so it only passes once the server accepts real
+      # connections, not just during the init-time Unix-socket-only phase.
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      # Persist the Celery queue across restarts
+      - --appendonly
+      - "yes"
+      # A task broker must never evict keys: fail writes instead of losing jobs
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  qdrant:
+    # Runs as a non-root user (unprivileged variant)
+    image: qdrant/qdrant:v1.20.2-unprivileged
+    restart: unless-stopped
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+      QDRANT__LOG_LEVEL: INFO
+    ports:
+      - "127.0.0.1:16333:6333" # HTTP / REST
+      - "127.0.0.1:16334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The image ships without curl/wget, so issue the HTTP request with bash's /dev/tcp
+      # and require "200" from the /readyz endpoint.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/6333 &&
+          printf 'GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:

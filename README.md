@@ -32,12 +32,14 @@ Python 3.12 · FastAPI · SQLAlchemy 2.0 · Alembic · Pydantic v2 · PostgreSQL
 git clone <repo-url> Cortex
 cd Cortex
 Copy-Item .env.example .env          # then edit values
-docker compose -f infra/compose/docker-compose.yml up -d
+docker compose -f infra/compose/docker-compose.yml --env-file .env up -d --wait
 cd backend
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:create_app --factory --reload
 ```
+
+Local infrastructure ports (localhost only, chosen to avoid clashing with other projects): PostgreSQL **15432**, Redis **16379**, Qdrant **16333** (HTTP) / **16334** (gRPC). Details: [docs/development](docs/development/README.md#local-infrastructure-task-0104).
 
 ## Environment variables
 All configuration is via `CORTEX_*` environment variables, documented in `.env.example` *(created in TASK-01.03)*. Never commit `.env`.

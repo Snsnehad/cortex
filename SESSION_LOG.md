@@ -50,6 +50,8 @@ Newest session first. Each entry is the handoff for the next session.
 
 - **TASK-01.03 COMPLETED** (branch `feat/TASK-01.03-settings`, merged to `main`): `app/config/settings.py` with groups database, redis, qdrant, storage, auth, embeddings, llm, rag; `.env.example` at repo root. Added deps pydantic 2.14.4, pydantic-settings 2.16.3 + pydantic mypy plugin. Results: ruff/format/mypy pass, pytest 53 passed (28 new); negative checks all failed as intended (see tracker). New ADR-016.
 
-**Exact next task:** **TASK-01.04** — `infra/compose/docker-compose.yml`: postgres:17, redis:7, qdrant (pinned), health checks, named volumes, ports bound to 127.0.0.1; credentials matching `.env.example` defaults.
+- **TASK-01.04 COMPLETED** (branch `feat/TASK-01.04-compose-infra`, merged to `main`). Docker Desktop was not running at session time → started it. First `up` failed: host port 6379 held by the **yenta-redis** work container (also `chatbot-qdrant-1` maps 6333) → Cortex moved to host ports 15432/16379/16333/16334; settings defaults, `.env.example` and a test updated to match (ADR-017). Verified: all healthy, config in effect, Qdrant non-root, health-check negatives, localhost-only (not on LAN), volume persistence across down/up. Work containers untouched. Cortex stack left **running**.
+
+**Exact next task:** **TASK-01.05** — `backend/Dockerfile` (multi-stage with uv, non-root user, no dev deps) and an `api` service in compose. Note: the API image needs an app to run; TASK-01.06 adds `create_app` — 01.05 may need a minimal ASGI entrypoint or be done together with 01.06 (decide at start of 01.05).
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.
