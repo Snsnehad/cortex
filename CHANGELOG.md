@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-26 — `scripts/dev.cmd` / `scripts/dev.ps1` developer commands: up (-App), down, ps, logs, api, test (pytest args pass through), lint, format, check, reset (typed confirmation) [TASK-01.08].
 - 2026-11-26 — Structured JSON logging for every logger (structlog + stdlib), `X-Request-ID` propagation, access log without query strings, recursive secret redaction, `CORTEX_LOG_FORMAT` [TASK-01.07].
 - 2026-11-26 — Backend container image: two-stage uv build, non-root, read-only root FS, all capabilities dropped, liveness health check; `api` compose service behind the opt-in `app` profile on 127.0.0.1:18000 [TASK-01.05].
 - 2026-11-26 — FastAPI app factory with `/api/v1/health/live` and `/api/v1/health/ready` (concurrent, time-bounded checks of PostgreSQL, Redis, Qdrant; 503 when any is down) [TASK-01.06].

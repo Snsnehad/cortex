@@ -2,6 +2,34 @@
 
 Local setup details, dev scripts (TASK-01.08), worker operations, troubleshooting.
 
+## Developer commands (TASK-01.08)
+
+`scripts\dev.cmd <command>` works from any folder and under any PowerShell execution policy.
+
+| Command | What it does |
+|---|---|
+| `help` | List commands |
+| `up` | Start PostgreSQL, Redis, Qdrant; wait until healthy; print ports |
+| `up -App` | Same, plus build and start the API container on http://127.0.0.1:18000 |
+| `down` | Stop all Cortex containers, including the API. **Data is kept** |
+| `ps` | Container status |
+| `logs [service] [-Follow]` | Last 200 log lines (`postgres`, `redis`, `qdrant`, `api`) |
+| `api [-Port 8000]` | Run the API on the host with auto-reload |
+| `test [pytest args]` | Backend tests. Arguments go to pytest unchanged: `test -m "not integration"`, `test -k settings -x` |
+| `lint` | `ruff check`, `ruff format --check`, `mypy` |
+| `format` | `ruff format` + `ruff check --fix` |
+| `check` | `lint`, then `test`: what CI runs |
+| `reset` | **Destructive:** removes containers and all Cortex volumes. Asks you to type `delete cortex data`; anything else (or no input) aborts |
+
+Exit codes: 0 on success, 1 when any step fails (failures of `docker`, `uv` and `pytest` propagate), 2 for an unknown command.
+
+**Why `dev.cmd` and not just `dev.ps1`?** Windows' default execution policy (Restricted) blocks local `.ps1` files. `dev.cmd` starts PowerShell with `-ExecutionPolicy Bypass` for that one process only; no system setting changes. If you prefer running `.\scripts\dev.ps1` directly, allow local scripts for your user. That is your security decision:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+**Why the script parses its own arguments:** with a PowerShell `param()` block, pytest flags would be captured by PowerShell. `-m` would be an unknown parameter, `-p` would bind to `-Port`, and `-v` would become `-Verbose`. The script takes only `-App`, `-Follow` and `-Port` for the commands that use them; `test`/`check` forward everything to pytest.
+
 ## Backend tooling (TASK-01.02)
 
 All Python work goes through [uv](https://docs.astral.sh/uv/); you never need a system Python. Run from `backend/`:

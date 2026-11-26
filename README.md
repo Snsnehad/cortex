@@ -27,17 +27,17 @@ Python 3.12 · FastAPI · SQLAlchemy 2.0 · Alembic · Pydantic v2 · PostgreSQL
 - Node.js 22 LTS (frontend)
 - An OpenAI-compatible LLM endpoint + key (only for real answers; tests use fakes)
 
-## Local setup *(planned — finalized in PHASE-01)*
+## Local setup
 ```powershell
-git clone <repo-url> Cortex
+git clone https://github.com/Snsnehad/cortex.git Cortex
 cd Cortex
 Copy-Item .env.example .env          # then edit values
-docker compose -f infra/compose/docker-compose.yml --env-file .env up -d --wait
-cd backend
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:create_app --factory --reload --port 8000
+scripts\dev.cmd up                   # PostgreSQL, Redis, Qdrant; waits until healthy
+scripts\dev.cmd api                  # API with auto-reload on http://127.0.0.1:8000
+scripts\dev.cmd check                # lint + type check + tests (what CI runs)
 ```
+
+`scripts\dev.cmd help` lists every command ([details](docs/development/README.md#developer-commands-task-0108)). The equivalent raw commands are `docker compose -f infra/compose/docker-compose.yml --env-file .env up -d --wait`, then `uv sync` and `uv run uvicorn app.main:create_app --factory --reload --port 8000` in `backend/`. Database migrations (`alembic upgrade head`) arrive in PHASE-02.
 
 Then open http://127.0.0.1:8000/api/v1/docs, or check http://127.0.0.1:8000/api/v1/health/ready (200 when PostgreSQL, Redis and Qdrant are reachable, 503 otherwise).
 On Windows **without** `--reload`, add `--loop asyncio:SelectorEventLoop` (psycopg's async mode does not support Windows' default event loop). See [docs/development](docs/development/README.md#running-the-api-task-0106).

@@ -62,6 +62,8 @@ Newest session first. Each entry is the handoff for the next session.
 - **TASK-01.07 COMPLETED** (branch `feat/TASK-01.07-structured-logging`, merged): structlog 26.1.0; `app/core/logging.py` (one pipeline, redaction), `app/middleware/request_context.py` (pure ASGI), new setting `log_format`. Tests 119 passed (51 new). Verified in the container (see tracker). Issues found + fixed: stale-stdout handler (pytest closes setup-phase capture streams) → per-record `sys.stdout`; empty-user URL credentials; uvicorn `color_message` noise.
 - Known gap: an unhandled exception is logged by our middleware (with request_id) and also by uvicorn (without) until the error handling in TASK-02.06.
 
-**Exact next task:** **TASK-01.08** — `scripts/dev.ps1` with commands: up, down, ps, logs, api (run uvicorn with reload), test, lint (ruff+mypy), reset (down -v, requires typed confirmation). `migrate` lands with Alembic in TASK-02.02.
+- **TASK-01.08 COMPLETED** (branch `feat/TASK-01.08-dev-scripts`, merged): `scripts/dev.ps1` (PS 5.1, pure ASCII, CRLF) + `scripts/dev.cmd` (per-process ExecutionPolicy Bypass: the machine policy is Restricted by default). Fixed during task: PowerShell param binding would have captured pytest flags (-m, -p→-Port, -v→-Verbose) → manual argument parsing. Every command run and verified (see tracker). Real `reset` not run (destructive).
+
+**Exact next task:** **TASK-01.09** — `.github/workflows/ci.yml`: ruff, format check, mypy, pytest (incl. integration) with PostgreSQL 17.12 / Redis 7.4.12 / Qdrant 1.20.2 service containers mapped to the Cortex host ports, Docker image build; uv 0.13.6 with cache; verify a green run on GitHub.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.
