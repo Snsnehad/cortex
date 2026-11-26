@@ -110,3 +110,10 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Context**: The development machine runs other projects whose containers bind the default ports (a work Redis on 6379, Qdrant on 6333, several Postgres instances). Stopping them is not acceptable.
 * **Decision**: Cortex binds host ports 15432 (Postgres), 16379 (Redis), 16333/16334 (Qdrant), all on 127.0.0.1 only. Inside Docker the standard ports are unchanged. Backend defaults and `.env.example` use these ports. The Postgres host port follows `CORTEX_DATABASE__PORT`.
 * **Consequences**: Cortex runs side by side with other projects. Deployed environments are unaffected (they set URLs explicitly).
+
+### ADR-018 — Windows host development: 127.0.0.1 and the selector event loop
+* **Status**: Accepted (2026-11-26, TASK-01.06)
+* **Context**: Two Windows-only problems surfaced while testing readiness against the live stack. (1) `localhost` resolves to `::1` first. Async clients then spend ~2 s per connection before falling back to IPv4, because compose binds IPv4 only. Measured: Postgres 10 s, Redis 2 s, versus 24 ms / 11 ms on `127.0.0.1`. (2) psycopg 3's async mode does not support the Proactor event loop that Windows and uvicorn use by default (`InterfaceError`).
+* **Decision**: Local defaults and `.env.example` use `127.0.0.1`. Tests run AnyIO on `asyncio.SelectorEventLoop` on Windows (`tests/conftest.py`). Running uvicorn on Windows without `--reload` requires `--loop asyncio:SelectorEventLoop` (documented). Containers and CI (Linux) need neither.
+* **Alternatives**: binding compose ports on `::1` as well (Docker Desktop IPv6 support varies); asyncpg instead of psycopg (works with Proactor, but loses the single sync+async driver from ADR-004).
+* **Consequences**: Fast, reliable local runs on Windows. One extra flag in one documented situation.

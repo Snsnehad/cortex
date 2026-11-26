@@ -44,7 +44,9 @@ class Environment(StrEnum):
 
 
 class DatabaseSettings(BaseModel):
-    host: str = "localhost"
+    # 127.0.0.1, not "localhost": on Windows async clients try IPv6 ::1 first and lose ~2 s
+    # per connection before falling back to IPv4 (compose binds IPv4 only).
+    host: str = "127.0.0.1"
     port: int = Field(default=15432, ge=1, le=65535)  # Cortex compose host port
     user: str = "cortex"
     password: SecretStr = SecretStr(DEV_DATABASE_PASSWORD)
@@ -62,11 +64,11 @@ class DatabaseSettings(BaseModel):
 
 
 class RedisSettings(BaseModel):
-    url: SecretStr = SecretStr("redis://localhost:16379/0")  # Cortex compose host port
+    url: SecretStr = SecretStr("redis://127.0.0.1:16379/0")  # Cortex compose host port
 
 
 class QdrantSettings(BaseModel):
-    url: str = "http://localhost:16333"  # Cortex compose host port
+    url: str = "http://127.0.0.1:16333"  # Cortex compose host port
     api_key: SecretStr | None = None
     collection_prefix: str = Field(default="cortex_", pattern=r"^[a-z][a-z0-9_]*$")
     timeout_seconds: float = Field(default=10.0, gt=0)

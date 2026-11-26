@@ -36,8 +36,11 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env up -d --wait
 cd backend
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.main:create_app --factory --reload
+uv run uvicorn app.main:create_app --factory --reload --port 8000
 ```
+
+Then open http://127.0.0.1:8000/api/v1/docs, or check http://127.0.0.1:8000/api/v1/health/ready (200 when PostgreSQL, Redis and Qdrant are reachable, 503 otherwise).
+On Windows **without** `--reload`, add `--loop asyncio:SelectorEventLoop` (psycopg's async mode does not support Windows' default event loop). See [docs/development](docs/development/README.md#running-the-api-task-0106).
 
 Local infrastructure ports (localhost only, chosen to avoid clashing with other projects): PostgreSQL **15432**, Redis **16379**, Qdrant **16333** (HTTP) / **16334** (gRPC). Details: [docs/development](docs/development/README.md#local-infrastructure-task-0104).
 

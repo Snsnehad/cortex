@@ -62,7 +62,7 @@ def test_development_defaults_load_without_any_configuration() -> None:
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.debug is False
     assert settings.storage.backend == "local"
-    assert settings.database.url == "postgresql+psycopg://cortex:cortex@localhost:15432/cortex"
+    assert settings.database.url == "postgresql+psycopg://cortex:cortex@127.0.0.1:15432/cortex"
 
 
 def test_environment_variables_configure_nested_groups(monkeypatch: pytest.MonkeyPatch) -> None:

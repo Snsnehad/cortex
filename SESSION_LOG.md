@@ -52,6 +52,11 @@ Newest session first. Each entry is the handoff for the next session.
 
 - **TASK-01.04 COMPLETED** (branch `feat/TASK-01.04-compose-infra`, merged to `main`). Docker Desktop was not running at session time → started it. First `up` failed: host port 6379 held by the **yenta-redis** work container (also `chatbot-qdrant-1` maps 6333) → Cortex moved to host ports 15432/16379/16333/16334; settings defaults, `.env.example` and a test updated to match (ADR-017). Verified: all healthy, config in effect, Qdrant non-root, health-check negatives, localhost-only (not on LAN), volume persistence across down/up. Work containers untouched. Cortex stack left **running**.
 
-**Exact next task:** **TASK-01.05** — `backend/Dockerfile` (multi-stage with uv, non-root user, no dev deps) and an `api` service in compose. Note: the API image needs an app to run; TASK-01.06 adds `create_app` — 01.05 may need a minimal ASGI entrypoint or be done together with 01.06 (decide at start of 01.05).
+- Order changed with approval: TASK-01.06 before 01.05.
+- **TASK-01.06 COMPLETED** (branch `feat/TASK-01.06-app-factory-health`, merged to `main`): app factory, `/api/v1/health/live` + `/ready`, HealthService with concurrent 2 s-bounded checks, settings on `app.state`. Deps added: fastapi 0.165.0, uvicorn 0.54.0, psycopg[binary] 3.3.9, redis 8.2.0, httpx 0.28.1. Tests: 68 passed (15 new; 2 integration vs live stack). Manual: real uvicorn, stop/start redis and postgres → 503/200 transitions as expected.
+- Found + fixed (ADR-018): `localhost` costs 2–10 s per async connection on Windows → defaults now `127.0.0.1`; psycopg async fails on the Proactor loop → selector loop in tests and `--loop asyncio:SelectorEventLoop` for non-reload uvicorn on Windows.
+- Mistake caught: first manual run left a stray uvicorn running (cleanup matched `python.exe` by a pattern that missed `uvicorn.exe"`), so a later run hit the old server. Now stopped by port owner; documented.
+
+**Exact next task:** **TASK-01.05** — `backend/Dockerfile` (multi-stage with uv, non-root, no dev deps, uvicorn with uvloop on Linux) + `api` service in compose with a health check on `/api/v1/health/ready`, using service hostnames (postgres, redis, qdrant) inside the compose network.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

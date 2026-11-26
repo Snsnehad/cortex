@@ -10,7 +10,7 @@
 | Phase | Name | Status | Done / Total |
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
-| PHASE-01 | Dev environment & repo | IN_PROGRESS | 4 / 9 |
+| PHASE-01 | Dev environment & repo | IN_PROGRESS | 5 / 9 |
 | PHASE-02 | Database & backend foundation | NOT_STARTED | 0 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-01.05 — backend Dockerfile (multi-stage, uv, non-root) + `api` service in compose.
-**Next task:** TASK-01.06 (app factory + /health/live and /health/ready).
+**Current task:** TASK-01.05 — backend Dockerfile (multi-stage, uv, non-root) + `api` service in compose, health check on /api/v1/health/ready.
+**Next task:** TASK-01.07 (structured logging, request id, redaction).
 
 ## Known blockers
 
@@ -66,8 +66,8 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-01.02 | Backend scaffold (uv, package tree, ruff/mypy/pytest) | COMPLETED | 01.01 | backend/pyproject.toml, backend/uv.lock, backend/.python-version, backend/app/**/__init__.py (23 packages), backend/tests/** layout, docs/development/README.md | tests/unit/test_project_layout.py (25 cases: Python 3.12 pin, 23 packages importable + documented, no namespace packages) | ruff check PASS · ruff format --check PASS (32 files) · mypy --strict PASS (31 files) · pytest 25 passed · negative check: stray dir without __init__.py → test FAILED as intended | Dev tools only (ruff 0.17.6, mypy 2.4.1, pytest 9.2.0); runtime deps added by the task that first needs them. uv `link-mode=copy` (cache on C:, project on D:) |
 | TASK-01.03 | Settings + env profiles + `.env.example` | COMPLETED | 01.02 | backend/app/config/settings.py, backend/app/config/__init__.py, .env.example, backend/pyproject.toml (pydantic deps + mypy plugin), docs/development/README.md, DECISIONS.md (ADR-016) | tests/unit/test_settings.py (28 cases) | ruff PASS · format PASS · mypy --strict PASS · pytest 53 passed (28 new) · negative checks: var removed from .env.example → sync test FAILED; real env CORTEX_ENVIRONMENT=production with dev defaults → startup refused; CORTEX_DATABSE__HOST typo → rejected | LLM default model `gpt-4o-mini` is a placeholder until P-1 (provider) is answered |
 | TASK-01.04 | Docker Compose dev infra with health checks | COMPLETED | 01.01 | infra/compose/docker-compose.yml; port defaults in backend/app/config/settings.py, .env.example, tests/unit/test_settings.py; README.md; docs/development/README.md; DECISIONS.md (ADR-017) | Manual verification script (no Python drivers yet; automated readiness tests come with TASK-01.06) | `up -d --wait` → postgres/redis/qdrant all healthy · PG 17.12 + pg_stat_statements loaded · Redis appendonly=yes, noeviction · Qdrant 1.20.2 /readyz 200, uid 1000 · health-check negatives (404 path, closed port) fail as intended · ports reachable on 127.0.0.1, NOT on LAN 192.168.1.9 · data survived down/up in all 3 volumes (markers removed) · backend suite 53 passed | First start failed: host 6379 held by the yenta-redis work container → moved Cortex to host ports 15432/16379/16333/16334 (ADR-017). Docker RAM still 2.8 GB (B-02) |
-| TASK-01.05 | Backend Dockerfile + api service | NOT_STARTED | 01.02, 01.04 | | | | |
-| TASK-01.06 | App factory + live/ready health | NOT_STARTED | 01.03 | | | | |
+| TASK-01.05 | Backend Dockerfile + api service | NOT_STARTED | 01.02, 01.04, 01.06 | | | | Reordered after 01.06 (approved 2026-11-26) so the image health check can use /api/v1/health/ready |
+| TASK-01.06 | App factory + live/ready health | COMPLETED | 01.03 | app/main.py, app/api/v1/{router,health}.py, app/services/health.py, app/dependencies/{health,settings}.py, app/schemas/health.py, tests/conftest.py; settings + .env.example (127.0.0.1 defaults); README, docs/development, DECISIONS (ADR-018) | tests/unit/test_health_service.py (7), tests/unit/test_health_api.py (6), tests/integration/test_health_ready.py (2) | ruff PASS · mypy --strict PASS · pytest 68 passed (15 new, incl. 2 integration vs live stack) · manual uvicorn run: all up 200 → redis stopped 503 (timeout) → restarted 200 → postgres stopped 503 → restarted 200; /live stays 200 | Found + fixed 2 Windows issues (ADR-018): localhost→127.0.0.1 (10 s → 24 ms), selector loop for psycopg. Readiness runs ~2 s when a port is refused on Windows (bounded by timeout) |
 | TASK-01.07 | Structured logging + request id + redaction | NOT_STARTED | 01.06 | | | | |
 | TASK-01.08 | Dev PowerShell scripts | NOT_STARTED | 01.04 | | | | |
 | TASK-01.09 | GitHub Actions CI | NOT_STARTED | 01.02–01.07 | | | | Remote ready (Snsnehad/cortex) |
