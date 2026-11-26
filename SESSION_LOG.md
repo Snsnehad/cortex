@@ -43,6 +43,8 @@ Newest session first. Each entry is the handoff for the next session.
 
 - Repo-local identity set (Snsnehad, personal Gmail) and initial commit made → **TASK-01.01 COMPLETED**. Global work identity untouched.
 
-**Exact next task:** **TASK-01.02** (backend scaffold). In parallel when you are ready: sign in to your personal GitHub with `gh auth login`, then create the repo and push (B-04).
+- Created public repo https://github.com/Snsnehad/cortex and pushed `main` (B-04 resolved). Note: `gh` active account is now Snsnehad — for yenta work run `gh auth switch -u snehad-bot`.
+
+**Exact next task:** **TASK-01.02** (backend scaffold: uv project, Python 3.12, `app` package tree, ruff/mypy/pytest config).
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

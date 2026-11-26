@@ -38,7 +38,7 @@
 | B-01 | Node.js/npm not installed | TASK-12.01+ | Install Node 22 LTS before Phase 12 |
 | B-02 | Docker Desktop has ~2.8 GB RAM | Comfortable running of Phase 5+ stack | Raise to 6–8 GB (Settings → Resources) |
 | B-03 | No LLM endpoint/API key confirmed | Manual RAG runs (TASK-10.07), faithfulness eval (TASK-14.04) | Decide provider (see DECISIONS.md "Pending your input") |
-| B-04 | Personal GitHub remote not set up; `gh` is signed in only as the work account | Push, TASK-01.09 (CI) | You sign in to your personal account (`gh auth login`), choose repo name + visibility, then the repo is created and pushed |
+| ~~B-04~~ | ~~Personal GitHub remote~~ | — | **Resolved 2026-11-26**: public repo https://github.com/Snsnehad/cortex, `origin` over HTTPS, gh active account = Snsnehad (has `workflow` scope for CI) |
 
 ---
 
@@ -70,7 +70,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-01.06 | App factory + live/ready health | NOT_STARTED | 01.03 | | | | |
 | TASK-01.07 | Structured logging + request id + redaction | NOT_STARTED | 01.06 | | | | |
 | TASK-01.08 | Dev PowerShell scripts | NOT_STARTED | 01.04 | | | | |
-| TASK-01.09 | GitHub Actions CI | NOT_STARTED | 01.02–01.07 | | | | Needs remote (B-04) |
+| TASK-01.09 | GitHub Actions CI | NOT_STARTED | 01.02–01.07 | | | | Remote ready (Snsnehad/cortex) |
 
 ### PHASE-02 — Database & backend foundation
 
