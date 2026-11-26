@@ -96,6 +96,12 @@ Newest session first. Each entry is the handoff for the next session.
 - Verified on a real uvicorn (throwaway factory in the scratchpad, not committed): 1 structured traceback with request_id, 0 uvicorn duplicates, secret redacted.
 - My test slip: a leak check for the word "crash" matched my own request id "req-crash"; renamed the id, kept the check strict.
 
-**Exact next task:** **TASK-02.07**: `app/core/pagination.py`: keyset pagination over (sort_key, id) with an opaque base64url cursor that is integrity-protected (HMAC with a key derived from the JWT secret, so clients cannot forge or alter cursors); `Page[T]` response model `{items, next_cursor, has_more}` per API_SPECIFICATION; `limit` 1..100 (default 20); invalid/tampered cursor → ValidationFailedError with code INVALID_CURSOR (400? spec says 400 for malformed: decide and document). Tests: stable ordering when timestamps tie, no duplicates/skips while rows are inserted between pages, tampered cursor rejected.
+- TASK-02.06 CI on main: run 45821092406 SUCCESS (241 passed).
+- **TASK-02.07 COMPLETED**: signed `CursorCodec` (HMAC-SHA256 truncated to 128 bits, key derived from the JWT secret, scope-bound), `KeysetOrder` / `apply_keyset` / `fetch_page` (row-value comparison, LIMIT n+1, no COUNT), `Page[T]` schema, `PageParams` / `CursorCodecDep` dependencies, new `BadRequestError` (400) with `INVALID_CURSOR`. Adopted PEP 695 generic syntax (ruff UP046/UP047). 276 tests passed.
+- Decision: cursor errors are 400 (the spec's "malformed"), `limit` errors 422; every cursor failure gives the same response (reveals nothing about why).
+- Query plan checked in a rolled-back transaction with 20k rows: page 1 and a ~9,000-deep page each read 22 index rows. Follow-up recorded on TASK-14.06: incremental sort on id for timestamp ties.
+- My test slip: set pydantic `from_attributes` after class creation (no effect); now declared in the class.
+
+**Exact next task:** **TASK-02.08** (test harness): most of it exists (scratch DB per test, session-scoped migrated DB, truncate-all fixtures, AnyIO selector loop on Windows). Remaining per the plan: per-test isolation strategy review (truncate vs savepoint rollback; measure), model factories, verify the suite in random order (add pytest-randomly), and document the harness in docs/testing/. Then PHASE-03 begins with TASK-03.01 (Argon2id password hashing).
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

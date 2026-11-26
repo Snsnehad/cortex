@@ -47,6 +47,13 @@ class AppError(Exception):
         return f"{type(self).__name__}(code={self.code!r}, message={self.message!r})"
 
 
+class BadRequestError(AppError):
+    """The request is malformed (e.g. an invalid or tampered pagination cursor)."""
+
+    default_code = "BAD_REQUEST"
+    default_message = "The request is malformed."
+
+
 class AuthenticationError(AppError):
     """No valid credentials (missing, expired or invalid token)."""
 

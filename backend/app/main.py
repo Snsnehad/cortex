@@ -18,6 +18,7 @@ from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.pagination import CursorCodec
 from app.database.session import create_engine, create_session_factory
 from app.middleware.request_context import RequestContextMiddleware
 
@@ -55,6 +56,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Creating the engine opens no connection; the pool fills on first use.
     app.state.db_engine = create_engine(settings)
     app.state.session_factory = create_session_factory(app.state.db_engine)
+    # Signs pagination cursors; key derived from the JWT secret (never used directly).
+    app.state.cursor_codec = CursorCodec(settings.auth.jwt_secret.get_secret_value().encode())
     app.include_router(api_router, prefix=API_V1_PREFIX)
     register_exception_handlers(app)
     app.add_middleware(RequestContextMiddleware, quiet_paths=HEALTH_PATHS)

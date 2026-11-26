@@ -25,6 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.errors import (
     AppError,
     AuthenticationError,
+    BadRequestError,
     ConflictError,
     NotFoundError,
     PayloadTooLargeError,
@@ -41,6 +42,7 @@ logger = get_logger("cortex.errors")
 
 # Order matters only for subclasses of each other (none today); first match wins.
 STATUS_BY_ERROR: dict[type[AppError], int] = {
+    BadRequestError: 400,
     AuthenticationError: 401,
     PermissionDeniedError: 403,
     NotFoundError: 404,

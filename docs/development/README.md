@@ -287,6 +287,7 @@ raise ConflictError(
 
 | Error | Status | Default code |
 |---|---|---|
+| `BadRequestError` | 400 (malformed requests, e.g. `INVALID_CURSOR`) | `BAD_REQUEST` |
 | `AuthenticationError` | 401 (+ `WWW-Authenticate: Bearer`) | `UNAUTHENTICATED` |
 | `PermissionDeniedError` | 403 | `PERMISSION_DENIED` |
 | `NotFoundError` | 404 (also for other tenants' resources: never confirm existence) | `NOT_FOUND` |
@@ -307,3 +308,29 @@ Every error body: `{"error": {"code", "message", "details", "request_id"}}`; `re
 - A new `AppError` subclass must be added to `STATUS_BY_ERROR` (a test fails otherwise).
 - 422 field errors contain only `loc`, `msg` and `type`. FastAPI's default would echo the submitted value, e.g. a password.
 - Unexpected exceptions are logged **once** by `RequestContextMiddleware`, with the request id and a redacted, structured traceback. Verified on a real uvicorn: 1 log record, 0 uvicorn duplicates, 0 plain-text tracebacks.
+
+## Pagination (TASK-02.07)
+
+Every list endpoint uses **keyset pagination**: `?limit=1..100` (default 20) and `?cursor=<next_cursor from the previous page>`. Responses are `{"items": [...], "next_cursor": "..." | null, "has_more": bool}` (`app/schemas/pagination.py`).
+
+```python
+from app.dependencies.pagination import CursorCodecDep, PageParams
+from app.repositories.pagination import KeysetOrder, fetch_page
+
+NEWEST_FIRST = KeysetOrder(Document.created_at, Document.id, descending=True)
+
+# in a repository/service
+stmt = select(Document).where(Document.organization_id == org_id, Document.knowledge_base_id == kb_id)
+result = await fetch_page(session, stmt, NEWEST_FIRST, page=page, codec=codec,
+                          scope=f"documents:kb={kb_id}:created_at:desc")
+```
+
+**Why keyset, not OFFSET:** the next page is `WHERE (created_at, id) < (:last_created_at, :last_id)`. It costs the same on page 1 and page 1,000, and rows inserted or deleted between requests cause no duplicates and no skips (both tested). With 20,000 rows, `EXPLAIN ANALYZE` reads 22 index rows for page 1 and for a page ~9,000 rows deep.
+
+**Rules**
+- The sort column must be NOT NULL, and the `id` tie-breaker is mandatory: rows written in one transaction share `now()`. A test pages 45 rows with identical timestamps.
+- The `scope` names the listing *and its filters and order*. A cursor from another listing (another KB, another order) is rejected.
+- Cursors are **signed, not encrypted** (HMAC-SHA256 with a key derived from the JWT secret): readable but not forgeable. Never use a secret value as a sort key. Rotating the JWT secret invalidates outstanding cursors; clients restart from page one.
+- Tenant isolation comes from the query's `WHERE organization_id = …`, never from the cursor.
+- Every cursor problem (tampered, too long, wrong listing, garbage) → **400 `INVALID_CURSOR`**; `limit` out of range → 422.
+- Known follow-up (TASK-14.06): indexes are `(…, created_at DESC)` without `id`, so Postgres adds a small incremental sort to break timestamp ties. Add `id DESC` to the index if measurements show large tie groups.

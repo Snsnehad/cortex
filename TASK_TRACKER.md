@@ -11,7 +11,7 @@
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
-| PHASE-02 | Database & backend foundation | IN_PROGRESS | 6 / 8 |
+| PHASE-02 | Database & backend foundation | IN_PROGRESS | 7 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-02.07 — keyset pagination helper (opaque, tamper-safe cursor; stable ordering with equal timestamps; invalid cursor → 400).
-**Next task:** TASK-02.08 (test harness).
+**Current task:** TASK-02.08 — test harness (much already exists; this task completes and documents it).
+**Next task:** PHASE-03 / TASK-03.01 (password hashing).
 
 ## Known blockers
 
@@ -82,7 +82,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-02.04 | KBs/documents/chunks/jobs (+composite FKs, partial uniques) | COMPLETED | 02.03 | app/models/{knowledge_base,document,processing_job,__init__}.py, migrations/versions/20261126_1212-6228847616cc_create_knowledge_bases_documents_chunks_jobs.py, tests/integration/{conftest.py (db_engine, session_factory: truncate all tables), db_helpers.py}, tests/integration/test_identity_models.py (shared fixtures), DATABASE_DESIGN.md | tests/integration/test_document_models.py (27), tests/unit/test_document_models_unit.py (4) | ruff · mypy · pytest 198 passed · migration safety net (round trip, stairway, drift) passes on 2 revisions · verified in PostgreSQL: composite FKs, partial unique WHERE clauses, lower(name), DESC indexes, CHECK names · concurrent identical uploads: exactly 1 of 3 wins · mutation proof: single-column KB FK lets a cross-tenant document in (test FAILS); non-unique active-job index lets a 2nd active job in (test FAILS); restored byte-identical | Design strengthened: chunks and jobs now have composite tenant FKs instead of trusting the worker (DATABASE_DESIGN §4). Chunk id has no default by design. Dev DB at 6228847616cc |
 | TASK-02.05 | Conversations/messages/citations/usage_events | COMPLETED | 02.04 | app/models/{conversation,usage_event,__init__}.py, app/database/base.py (CreatedAtMixin), migrations/versions/20261126_1222-ba17b2b568e9_create_conversations_messages_citations_usage_events.py, tests/unit/test_database_base.py, DATABASE_DESIGN.md, DECISIONS.md (ADR-020) | tests/integration/test_chat_models.py (16) | ruff · mypy · pytest 214 passed · migration safety net passes on 3 revisions · drift test caught Float(24) vs REAL → fixed in model and migration · exact Decimal sums (10×0.1 + 0.000123 = 1.000123), micro-dollar rounding · mutation proof: plain user FK lets a non-member own a conversation (test FAILS); CASCADE citations vanish with their document (test FAILS); restored byte-identical | Design strengthened: conversation ownership tied to membership (ADR-020, open to veto). Dev DB at ba17b2b568e9 |
 | TASK-02.06 | Exceptions + error envelope | COMPLETED | 01.06 | app/core/errors.py, app/api/errors.py, app/schemas/errors.py, app/middleware/request_context.py (generic 500 inside the request context, no re-raise), app/main.py, docs/development/README.md | tests/unit/test_error_handling.py (27) | ruff · mypy · pytest 241 passed · every domain error → status + envelope; Retry-After / WWW-Authenticate; 404 / 405 (+Allow) / route HTTPException / 422 envelopes; 422 never echoes the submitted password; 500 leaks no exception text, URL or traceback · real uvicorn: 1 structured traceback with request_id, 0 uvicorn duplicates, 0 plain-text tracebacks, secret redacted | Closes the TASK-01.07 known gap (duplicate uvicorn traceback). Failures after the response started are logged once and re-raised so the server aborts the stream (tested) |
-| TASK-02.07 | Keyset pagination | NOT_STARTED | 02.01 | | | | |
+| TASK-02.07 | Keyset pagination | COMPLETED | 02.01 | app/core/pagination.py (signed CursorCodec, InvalidCursorError), app/repositories/pagination.py (KeysetOrder, apply_keyset, fetch_page, PageRequest), app/schemas/pagination.py (Page[T]), app/dependencies/pagination.py (PageParams, CursorCodecDep), app/core/errors.py + app/api/errors.py (BadRequestError → 400), app/main.py (codec on app.state), docs/development/README.md | tests/unit/test_pagination_cursor.py (21), tests/integration/test_pagination.py (14) | ruff · mypy · pytest 276 passed · 45 rows with identical created_at paged exactly once in order · inserts between pages: no duplicates/skips (OFFSET would repeat 4) · cursor row deleted: next page correct · tampered/forged/foreign-scope/foreign-secret/garbage/over-long cursors → 400 INVALID_CURSOR · limit 0/101/abc → 422 · EXPLAIN ANALYZE on 20k rows (rolled-back txn): page 1 and ~9,000-deep page each read 22 index rows | Cursors signed (HMAC-SHA256, derived key), not encrypted. Follow-up noted for TASK-14.06: add id DESC to the created_at indexes if tie groups get large (incremental sort observed) |
 | TASK-02.08 | Test harness (DB, rollback, factories, client) | NOT_STARTED | 02.02 | | | | |
 
 ### PHASE-03 — Auth & multi-tenancy
@@ -222,7 +222,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-14.03 | Retrieval eval (Recall@5, MRR, modes) | NOT_STARTED | 14.02, 09.03 | | | | |
 | TASK-14.04 | Answer eval (citations, faithfulness, refusals) | NOT_STARTED | 14.03, 11.02 | | | | Needs B-03 |
 | TASK-14.05 | Load tests | NOT_STARTED | 11.02 | | | | |
-| TASK-14.06 | DB query analysis | NOT_STARTED | 14.05 | | | | |
+| TASK-14.06 | DB query analysis | NOT_STARTED | 14.05 | | | | Input from TASK-02.07: keyset pages use (…, created_at DESC) indexes plus an incremental sort on id; consider (…, created_at DESC, id DESC) if large tie groups appear |
 | TASK-14.07 | Coverage gate in CI | NOT_STARTED | 01.09 | | | | |
 
 ### PHASE-15 — Security & production readiness
