@@ -9,11 +9,15 @@ settings are loaded when the app is built, and tests build isolated apps with th
 Settings.
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.database.session import create_engine, create_session_factory
 from app.middleware.request_context import RequestContextMiddleware
 
 API_V1_PREFIX = "/api/v1"
@@ -23,11 +27,21 @@ HEALTH_PATHS = (f"{API_V1_PREFIX}/health/live", f"{API_V1_PREFIX}/health/ready")
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    # Close every pooled connection on shutdown so the database sees a clean disconnect
+    # instead of connections dropped mid-session.
+    await app.state.db_engine.dispose()
+    logger.info("app.shutdown", db_pool="disposed")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
 
     app = FastAPI(
+        lifespan=lifespan,
         title="Cortex API",
         version=APP_VERSION,
         summary="Multi-tenant AI knowledge & research engine",
@@ -37,6 +51,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
     app.state.settings = settings
+    # Creating the engine opens no connection; the pool fills on first use.
+    app.state.db_engine = create_engine(settings)
+    app.state.session_factory = create_session_factory(app.state.db_engine)
     app.include_router(api_router, prefix=API_V1_PREFIX)
     app.add_middleware(RequestContextMiddleware, quiet_paths=HEALTH_PATHS)
 

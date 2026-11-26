@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-26 — Database foundation: async SQLAlchemy engine + session-per-request dependency, declarative Base with constraint naming convention, UUIDv7 primary-key and server-timestamp mixins, pool disposal on shutdown [TASK-02.01].
 - 2026-11-26 — GitHub Actions CI: lint, format, strict mypy, full tests with PostgreSQL/Redis/Qdrant service containers, Docker image build + hardened smoke test; actions pinned to commit SHAs [TASK-01.09].
 - 2026-11-26 — `scripts/dev.cmd` / `scripts/dev.ps1` developer commands: up (-App), down, ps, logs, api, test (pytest args pass through), lint, format, check, reset (typed confirmation) [TASK-01.08].
 - 2026-11-26 — Structured JSON logging for every logger (structlog + stdlib), `X-Request-ID` propagation, access log without query strings, recursive secret redaction, `CORTEX_LOG_FORMAT` [TASK-01.07].

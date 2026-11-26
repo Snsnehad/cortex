@@ -209,3 +209,29 @@ docker run --rm -v "${PWD}:/repo" -w /repo rhysd/actionlint:1.7.12
 gh api repos/actions/checkout/releases/latest --jq .tag_name
 gh api repos/actions/checkout/commits/<tag> --jq .sha
 ```
+
+## Database layer (TASK-02.01)
+
+| Piece | Where | Notes |
+|---|---|---|
+| `Base` | `app/database/base.py` | Declarative base; constraint naming convention; `uuid.UUID` → native `uuid`, `datetime` → `timestamptz`; `eager_defaults=True` |
+| `UUIDPrimaryKeyMixin` | same | `id` = app-generated **UUIDv7** (`app/utils/ids.py`): time-ordered, so inserts append to the PK index instead of scattering |
+| `TimestampMixin` | same | `created_at` / `updated_at` set by PostgreSQL `now()` (transaction start time); `updated_at` refreshed on UPDATE |
+| `create_engine(settings)` | `app/database/session.py` | One pool per process: `pool_pre_ping`, 30-min recycle, `application_name` visible in `pg_stat_activity` |
+| `DbSession` dependency | `app/dependencies/database.py` | One `AsyncSession` per request; always closed; rolled back on error |
+
+```python
+from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+class KnowledgeBase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "knowledge_bases"
+    name: Mapped[str] = mapped_column(String(200))
+```
+
+**Rules**
+- Services commit; repositories never do. Whatever is not committed when the request ends is rolled back.
+- Never trigger lazy loading in async code: load relationships explicitly (`selectinload`), or read only columns already loaded. `expire_on_commit=False` and `eager_defaults=True` keep objects readable after commit and update.
+- Test-only models go on their own `MetaData` (see `tests/integration/test_database_session.py`), so they never reach `Base.metadata`, which Alembic reads.
+- The engine is created in `create_app` (no I/O) and disposed in the lifespan shutdown.
+
+Naming convention results: `pk_<table>`, `uq_<table>_<cols>`, `ix_<table>_<cols>`, `fk_<table>_<cols>_<referred_table>`, `ck_<table>_<name>`.

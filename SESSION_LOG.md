@@ -69,6 +69,8 @@ Newest session first. Each entry is the handoff for the next session.
 - **TASK-01.09 COMPLETED**: PR #1 CI green on db60f78 (Backend: 119 passed on Linux incl. integration; Image: healthy, uid 10001, JSON logs). PR #1 merged by fast-forward; main push run 45812054140 SUCCESS. Auto-fix could not be enabled (repo outside the session folder).
 - **PHASE-01 COMPLETED (9/9).**
 
-**Exact next task:** **PHASE-02 / TASK-02.01**: SQLAlchemy 2.0 async engine + session factory (psycopg 3, async + sync engines share the driver), declarative `Base` with constraint naming convention, UUID primary key + created_at/updated_at mixins, request-scoped session dependency, pool settings from `DatabaseSettings`. Remember: Windows needs the selector loop for psycopg async (ADR-018).
+- **TASK-02.01 COMPLETED**: SQLAlchemy 2.1.9 (asyncio), Base + naming convention, UUIDPrimaryKeyMixin (own RFC 9562 UUIDv7), TimestampMixin (server now(), eager_defaults for async-safe reads), create_engine (pre_ping, recycle, application_name), DbSession dependency (rollback on error), engine on app.state + lifespan dispose. 140 tests passed; no leaks after 100 requests (pool and pg_stat_activity).
+
+**Exact next task:** **TASK-02.02**: `uv add alembic`, `alembic init -t async migrations` in backend/, env.py using `Base.metadata` + settings URL (never a hard-coded URL), compare_type/compare_server_default on, a models registry module that imports all models for autogenerate, `scripts/dev.cmd migrate` (+ `revision`), and a test: upgrade head → downgrade base → upgrade head on a scratch database.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

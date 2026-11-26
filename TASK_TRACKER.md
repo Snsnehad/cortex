@@ -11,7 +11,7 @@
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
-| PHASE-02 | Database & backend foundation | NOT_STARTED | 0 / 8 |
+| PHASE-02 | Database & backend foundation | IN_PROGRESS | 1 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-02.01 — SQLAlchemy 2.0 async engine + session factory (psycopg 3), declarative Base with naming conventions, UUID + timestamp mixins, session dependency.
-**Next task:** TASK-02.02 (Alembic async setup + migration round-trip test).
+**Current task:** TASK-02.02 — Alembic async setup (env.py on Base.metadata) + CI migration round-trip test.
+**Next task:** TASK-02.03 (users, organizations, memberships, refresh_tokens models + migration).
 
 ## Known blockers
 
@@ -76,7 +76,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
-| TASK-02.01 | Engine, session, Base, mixins | NOT_STARTED | 01.06 | | | | |
+| TASK-02.01 | Engine, session, Base, mixins | COMPLETED | 01.06 | app/database/{base,session}.py, app/dependencies/database.py, app/utils/ids.py, app/main.py (engine on app.state, lifespan dispose), docs/development/README.md, TECH_STACK.md | tests/unit/test_ids.py (6), tests/unit/test_database_base.py (6), tests/integration/test_database_session.py (9) | ruff · mypy · pytest 140 passed · against PostgreSQL: UUIDv7 + server timestamps, updated_at readable after UPDATE (eager_defaults), failed request rolled back, 100 requests (10 failing) → 0 checked out, 40 concurrent → within pool limits, lifespan disposes pool · pg_stat_activity: 0 cortex connections left, 0 leftover test tables | SQLAlchemy 2.1.9 (current stable; plan said 2.0, same API). Own UUIDv7 (Python 3.12 lacks uuid.uuid7) |
 | TASK-02.02 | Alembic async + round-trip test | NOT_STARTED | 02.01 | | | | |
 | TASK-02.03 | Users/orgs/memberships/refresh_tokens | NOT_STARTED | 02.02 | | | | |
 | TASK-02.04 | KBs/documents/chunks/jobs (+composite FKs, partial uniques) | NOT_STARTED | 02.03 | | | | |
