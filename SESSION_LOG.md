@@ -64,6 +64,8 @@ Newest session first. Each entry is the handoff for the next session.
 
 - **TASK-01.08 COMPLETED** (branch `feat/TASK-01.08-dev-scripts`, merged): `scripts/dev.ps1` (PS 5.1, pure ASCII, CRLF) + `scripts/dev.cmd` (per-process ExecutionPolicy Bypass: the machine policy is Restricted by default). Fixed during task: PowerShell param binding would have captured pytest flags (-m, -p→-Port, -v→-Verbose) → manual argument parsing. Every command run and verified (see tracker). Real `reset` not run (destructive).
 
-**Exact next task:** **TASK-01.09** — `.github/workflows/ci.yml`: ruff, format check, mypy, pytest (incl. integration) with PostgreSQL 17.12 / Redis 7.4.12 / Qdrant 1.20.2 service containers mapped to the Cortex host ports, Docker image build; uv 0.13.6 with cache; verify a green run on GitHub.
+- TASK-01.09 IN PROGRESS: `.github/workflows/ci.yml` written (actions SHA-pinned, read-only token), actionlint clean, pushed on branch `feat/TASK-01.09-ci`, PR #1 opened: https://github.com/Snsnehad/cortex/pull/1. Waiting for the first run.
+
+**Exact next task:** finish **TASK-01.09**: check PR #1 CI (`gh pr checks 1 --repo Snsnehad/cortex`). If red, fix on the branch. If green, merge (fast-forward main), confirm the run on main, mark TASK-01.09 + PHASE-01 COMPLETED. Then **TASK-02.01** (SQLAlchemy engine, session, Base).
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

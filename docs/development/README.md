@@ -185,3 +185,27 @@ logger.info("document.uploaded", document_id=str(doc.id), size_bytes=size)  # ev
   - Keys: exact `token`, `jwt`, `dsn`, `auth`, `cookie`, `set_cookie`, or ending in `password`, `passwd`, `secret`, `_token`, `api_key`, `apikey`, `authorization`, `credentials`, `private_key`, `_cookie`. Matching is recursive, case-insensitive, and treats `-` as `_`. Deliberately **not** a substring match, so `prompt_tokens` and `token_count` stay visible.
   - Text: `Bearer <token>` and `scheme://user:password@` in any string value, including exception messages in tracebacks.
 - Never log document text, prompts or answers in full (lengths and ids only).
+
+## Continuous integration (TASK-01.09)
+
+`.github/workflows/ci.yml` runs on every pull request, on pushes to `main`, and manually (`workflow_dispatch`).
+
+| Job | What it proves |
+|---|---|
+| **Backend** | `uv sync --frozen` (lockfile must be current) → ruff → format check → strict mypy → **full** pytest, including integration tests against real PostgreSQL 17.12, Redis 7.4.12 and Qdrant 1.20.2 service containers on the same host ports as local compose |
+| **Docker image** | Builds the production image (buildx, GitHub Actions cache), runs it read-only with all capabilities dropped, and checks it becomes healthy, runs as uid 10001, contains no dev dependencies, and logs only JSON |
+
+The local equivalent of the backend job is `scripts\dev.cmd check` (with the compose stack up).
+
+**Supply-chain hardening:** third-party actions are pinned to full commit SHAs (the version is in a comment), the token is read-only (`permissions: contents: read`), checkout does not persist credentials, and a newer push cancels the outdated run.
+
+**Validate a workflow change locally** before pushing:
+```powershell
+docker run --rm -v "${PWD}:/repo" -w /repo rhysd/actionlint:1.7.12
+```
+
+**Updating a pinned action:** look up the new release's commit, then replace both the SHA and the comment:
+```powershell
+gh api repos/actions/checkout/releases/latest --jq .tag_name
+gh api repos/actions/checkout/commits/<tag> --jq .sha
+```

@@ -1,6 +1,8 @@
 # Cortex — AI Knowledge & Research Engine
 
-> **Project status: planning complete, implementation not started.** Sections marked *(planned)* describe the target state and will be verified as each phase lands. See [TASK_TRACKER.md](TASK_TRACKER.md) for live progress.
+[![CI](https://github.com/Snsnehad/cortex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Snsnehad/cortex/actions/workflows/ci.yml)
+
+> **Project status: PHASE-01 (development environment) in progress.** Sections marked *(planned)* describe the target state and will be verified as each phase lands. See [TASK_TRACKER.md](TASK_TRACKER.md) for live progress.
 
 Cortex is a multi-tenant SaaS platform where organizations build private knowledge bases from their documents and ask questions that are answered **only from those documents, with verifiable citations down to the page**.
 
