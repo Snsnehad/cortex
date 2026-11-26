@@ -23,6 +23,7 @@ from sqlalchemy.schema import CreateIndex, CreateTable
 from app.database.base import (
     NAMING_CONVENTION,
     Base,
+    CreatedAtMixin,
     TimestampMixin,
     UUIDPrimaryKeyMixin,
 )
@@ -109,4 +110,6 @@ def test_annotation_types_are_python_types() -> None:
     assert hints["name"] == Mapped[str]
     # Inherited from mixins
     assert UUIDPrimaryKeyMixin.__annotations__["id"] == Mapped[uuid.UUID]
-    assert TimestampMixin.__annotations__["created_at"] == Mapped[datetime]
+    assert CreatedAtMixin.__annotations__["created_at"] == Mapped[datetime]
+    assert TimestampMixin.__annotations__["updated_at"] == Mapped[datetime]
+    assert issubclass(TimestampMixin, CreatedAtMixin)

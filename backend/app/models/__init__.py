@@ -6,6 +6,13 @@ would be invisible to migrations (and the drift test in tests/integration/test_m
 would not catch it).
 """
 
+from app.models.conversation import (
+    Conversation,
+    Message,
+    MessageCitation,
+    MessageRole,
+    MessageStatus,
+)
 from app.models.document import Document, DocumentChunk, DocumentStatus, chunk_id
 from app.models.knowledge_base import KnowledgeBase
 from app.models.organization import Organization, OrganizationMembership, OrgRole
@@ -17,10 +24,12 @@ from app.models.processing_job import (
     ProcessingJob,
 )
 from app.models.refresh_token import RefreshToken
+from app.models.usage_event import UsageEvent, UsageEventType
 from app.models.user import User
 
 __all__ = [
     "ACTIVE_JOB_STATUSES",
+    "Conversation",
     "Document",
     "DocumentChunk",
     "DocumentStatus",
@@ -28,11 +37,17 @@ __all__ = [
     "JobStatus",
     "JobType",
     "KnowledgeBase",
+    "Message",
+    "MessageCitation",
+    "MessageRole",
+    "MessageStatus",
     "OrgRole",
     "Organization",
     "OrganizationMembership",
     "ProcessingJob",
     "RefreshToken",
+    "UsageEvent",
+    "UsageEventType",
     "User",
     "chunk_id",
 ]

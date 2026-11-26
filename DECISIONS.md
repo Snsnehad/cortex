@@ -123,3 +123,9 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Context**: In a dependency outage (Redis stopped, so Docker DNS cannot resolve `redis`), readiness checks time out and their DNS lookups are cancelled. Under uvloop each cancelled lookup was logged as "Future exception was never retrieved … gaierror". Measured in the same outage: uvloop 4 spurious lines, asyncio 0, with identical health results.
 * **Decision**: The image runs `uvicorn … --loop asyncio`. Tests, Windows development and containers all use the standard loop.
 * **Consequences**: Clean logs during incidents and one event-loop implementation everywhere. We give up uvloop's raw loop throughput, which matters little because latency is dominated by PostgreSQL, embedding and LLM calls. Revisit with Phase 14 load-test numbers (`uvicorn[standard]` still installs uvloop, so switching back is a one-flag change).
+
+### ADR-020 — Conversation ownership is tied to organization membership
+* **Status**: Accepted (2026-11-26, TASK-02.05), **open to your veto**
+* **Context**: The design referenced `users` from `conversations.user_id`. That allows a conversation in an organization whose owner is not (or no longer) a member, so tenant access would rely only on application checks. Conversations are private to their creator.
+* **Decision**: Composite FK `conversations (organization_id, user_id)` → `organization_memberships (organization_id, user_id)` ON DELETE CASCADE.
+* **Consequences**: The database refuses non-member ownership. **Removing a member deletes their conversations in that organization.** Nobody else could read them, so this is data minimisation rather than loss of shared data. Alternatives, if preferred: `ON DELETE RESTRICT` (the service must handle conversations before removing a member), or a soft "archived" state. Either is a small migration change.

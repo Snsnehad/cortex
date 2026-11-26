@@ -172,7 +172,7 @@ Indexes: `UNIQUE (document_id) WHERE status IN ('QUEUED','RUNNING','RETRYING')` 
 | id | uuid PK | |
 | organization_id | uuid NOT NULL | |
 | knowledge_base_id | uuid NOT NULL | composite FK `(knowledge_base_id, organization_id)` ON DELETE CASCADE |
-| user_id | uuid FK users ON DELETE CASCADE | conversations are private to their creator |
+| user_id | uuid NOT NULL | conversations are private to their creator. Composite FK `(organization_id, user_id)` → `organization_memberships (organization_id, user_id)` ON DELETE CASCADE: only a current member can own a conversation; leaving the org deletes the member's conversations there (ADR-020) |
 | title | varchar(200) NOT NULL | first question, truncated; editable |
 | created_at / updated_at | timestamptz | `updated_at` bumped on each message |
 
@@ -206,10 +206,12 @@ Indexes: `ix (conversation_id, created_at)`.
 | document_id | uuid NULL FK documents ON DELETE SET NULL | |
 | document_filename | varchar(255) NOT NULL | snapshot, so history stays readable after deletion |
 | page_start / page_end | int NULL | |
+| section_path | varchar(1000) NULL | snapshot of the chunk's heading path (API citation object) |
 | snippet | varchar(1000) NOT NULL | short excerpt shown in UI |
-| relevance_score | real NULL | reranker score |
+| relevance_score | real NULL | reranker score (declared as `REAL`, not `Float(24)`, or the drift test flags it) |
+| created_at | timestamptz | append-only row: no `updated_at` (`CreatedAtMixin`) |
 
-Indexes: `ix (message_id)`, `UNIQUE (message_id, marker)`.
+Indexes: `UNIQUE (message_id, marker)`, which also serves lookups by `message_id`, so no separate index. CHECKs: `marker >= 1`, page range valid.
 
 ### usage_events
 | Column | Type | Notes |
@@ -233,6 +235,8 @@ Indexes: `ix (organization_id, created_at)`, `ix (organization_id, event_type, c
 2. **One active job per document** via partial unique index — the database, not application logic, prevents concurrent processing.
 3. **No duplicate active documents per KB** via partial unique index — race-safe even if two uploads of the same file arrive concurrently (the loser gets a constraint violation mapped to 409).
 4. **Deterministic chunk ids** make chunk insertion and Qdrant upserts idempotent.
+5. **Conversation ownership requires membership** (TASK-02.05, ADR-020): the database refuses a conversation whose owner is not a member of its organization, and removes a member's conversations when the membership ends. Proven necessary: with a plain `user_id → users` FK a non-member can own one (the test fails).
+6. **History outlives its sources**: citations keep a filename/page/snippet snapshot and their links become NULL when a document is deleted; usage events have no FKs to documents or messages, so cost history survives deletions. Both behaviours are mutation-tested.
 
 ## 5. Transactions
 

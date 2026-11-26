@@ -55,7 +55,12 @@ class UUIDPrimaryKeyMixin:
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_id)
 
 
-class TimestampMixin:
+class CreatedAtMixin:
+    """For append-only rows (usage events, citations) that are never updated."""
+
     # now() is the transaction start time: all rows written in one transaction share it.
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class TimestampMixin(CreatedAtMixin):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
