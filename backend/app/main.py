@@ -13,13 +13,19 @@ from fastapi import FastAPI
 
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
+from app.core.logging import configure_logging, get_logger
+from app.middleware.request_context import RequestContextMiddleware
 
 API_V1_PREFIX = "/api/v1"
 APP_VERSION = "0.1.0"
+HEALTH_PATHS = (f"{API_V1_PREFIX}/health/live", f"{API_V1_PREFIX}/health/ready")
+
+logger = get_logger(__name__)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    configure_logging(settings)
 
     app = FastAPI(
         title="Cortex API",
@@ -32,4 +38,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.include_router(api_router, prefix=API_V1_PREFIX)
+    app.add_middleware(RequestContextMiddleware, quiet_paths=HEALTH_PATHS)
+
+    logger.info(
+        "app.created",
+        environment=settings.environment.value,
+        version=APP_VERSION,
+        log_format=settings.log_format,
+    )
     return app

@@ -158,6 +158,8 @@ class Settings(BaseSettings):
     environment: Environment = Environment.DEVELOPMENT
     debug: bool = False
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # json: one JSON object per line (machines, deployed envs). console: coloured text (local).
+    log_format: Literal["json", "console"] = "json"
     # JSON list in env vars, e.g. CORTEX_CORS_ORIGINS=["https://app.example.com"]
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 

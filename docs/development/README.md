@@ -136,3 +136,24 @@ Inside the compose network the API reaches `postgres:5432`, `redis:6379` and `qd
 **Health check = liveness.** The Dockerfile `HEALTHCHECK` calls `/health/live`, not `/ready`. Orchestrators restart unhealthy containers, and a restart cannot fix a database outage. Verified: with Redis stopped, `/ready` returned 503 for 25 s while the container stayed `healthy` with 0 restarts. Readiness is for load balancers.
 
 **Event loop = asyncio (ADR-019).** uvloop logged "Future exception was never retrieved" on every probe during a dependency outage (cancelled DNS lookups). Measured in the same outage: uvloop 4 spurious log lines, asyncio 0, identical health results.
+
+## Logging (TASK-01.07)
+
+All output is **one JSON object per line on stdout** (`CORTEX_LOG_FORMAT=json`, the default). Set `CORTEX_LOG_FORMAT=console` in your `.env` for coloured, human-readable output locally.
+
+```python
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+logger.info("document.uploaded", document_id=str(doc.id), size_bytes=size)  # event name + fields
+```
+
+- **Event names, not sentences.** Use `area.action` names (`http.request`, `document.uploaded`) plus key/value fields. They are easy to search and aggregate.
+- **One pipeline:** structlog events and standard-library loggers (uvicorn, httpx, later Celery and SQLAlchemy) are rendered identically. uvicorn's own access log is disabled; `cortex.access` replaces it.
+- **Request id:** `RequestContextMiddleware` accepts a safe `X-Request-ID` (`[A-Za-z0-9._-]`, at most 128 chars) or generates one, returns it in the response header, and binds it so **every** log line written during that request carries `request_id`. It uses context variables, so concurrent requests never mix ids (tested).
+- **Access log** (`cortex.access` / `http.request`): method, path, status, duration_ms, client_ip. **The query string is never logged.** Health probes log at DEBUG; 5xx responses log at ERROR.
+- **Unhandled exceptions** are logged once, inside the request context (`http.unhandled_exception` with a structured traceback and the `request_id`).
+- **Redaction (defence in depth; still never log secrets on purpose):**
+  - Keys: exact `token`, `jwt`, `dsn`, `auth`, `cookie`, `set_cookie`, or ending in `password`, `passwd`, `secret`, `_token`, `api_key`, `apikey`, `authorization`, `credentials`, `private_key`, `_cookie`. Matching is recursive, case-insensitive, and treats `-` as `_`. Deliberately **not** a substring match, so `prompt_tokens` and `token_count` stay visible.
+  - Text: `Bearer <token>` and `scheme://user:password@` in any string value, including exception messages in tracebacks.
+- Never log document text, prompts or answers in full (lengths and ids only).

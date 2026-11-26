@@ -59,6 +59,9 @@ Newest session first. Each entry is the handoff for the next session.
 
 - **TASK-01.05 COMPLETED** (branch `feat/TASK-01.05-api-dockerfile`, merged): `backend/Dockerfile` (python:3.12.16-slim-trixie, uv 0.13.6, two stages), `.dockerignore`, compose `api` service (profile `app`, 127.0.0.1:18000, read-only, cap_drop ALL, no-new-privileges). All verification passed (see tracker). Found + fixed: uvloop log spam during outages → `--loop asyncio` (ADR-019), proven with a side-by-side probe container (removed). API container stopped after verification; infra left running.
 
-**Exact next task:** **TASK-01.07** — structlog JSON logging, request-id middleware (accept/generate `X-Request-ID`), access log, redaction processor for password/token/authorization/api_key/secret; route uvicorn logs through the same pipeline.
+- **TASK-01.07 COMPLETED** (branch `feat/TASK-01.07-structured-logging`, merged): structlog 26.1.0; `app/core/logging.py` (one pipeline, redaction), `app/middleware/request_context.py` (pure ASGI), new setting `log_format`. Tests 119 passed (51 new). Verified in the container (see tracker). Issues found + fixed: stale-stdout handler (pytest closes setup-phase capture streams) → per-record `sys.stdout`; empty-user URL credentials; uvicorn `color_message` noise.
+- Known gap: an unhandled exception is logged by our middleware (with request_id) and also by uvicorn (without) until the error handling in TASK-02.06.
+
+**Exact next task:** **TASK-01.08** — `scripts/dev.ps1` with commands: up, down, ps, logs, api (run uvicorn with reload), test, lint (ruff+mypy), reset (down -v, requires typed confirmation). `migrate` lands with Alembic in TASK-02.02.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.
