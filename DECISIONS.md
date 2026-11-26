@@ -117,3 +117,9 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Decision**: Local defaults and `.env.example` use `127.0.0.1`. Tests run AnyIO on `asyncio.SelectorEventLoop` on Windows (`tests/conftest.py`). Running uvicorn on Windows without `--reload` requires `--loop asyncio:SelectorEventLoop` (documented). Containers and CI (Linux) need neither.
 * **Alternatives**: binding compose ports on `::1` as well (Docker Desktop IPv6 support varies); asyncpg instead of psycopg (works with Proactor, but loses the single sync+async driver from ADR-004).
 * **Consequences**: Fast, reliable local runs on Windows. One extra flag in one documented situation.
+
+### ADR-019 — Standard asyncio event loop in containers (not uvloop)
+* **Status**: Accepted (2026-11-26, TASK-01.05)
+* **Context**: In a dependency outage (Redis stopped, so Docker DNS cannot resolve `redis`), readiness checks time out and their DNS lookups are cancelled. Under uvloop each cancelled lookup was logged as "Future exception was never retrieved … gaierror". Measured in the same outage: uvloop 4 spurious lines, asyncio 0, with identical health results.
+* **Decision**: The image runs `uvicorn … --loop asyncio`. Tests, Windows development and containers all use the standard loop.
+* **Consequences**: Clean logs during incidents and one event-loop implementation everywhere. We give up uvloop's raw loop throughput, which matters little because latency is dominated by PostgreSQL, embedding and LLM calls. Revisit with Phase 14 load-test numbers (`uvicorn[standard]` still installs uvloop, so switching back is a one-flag change).

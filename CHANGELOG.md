@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-26 — Backend container image: two-stage uv build, non-root, read-only root FS, all capabilities dropped, liveness health check; `api` compose service behind the opt-in `app` profile on 127.0.0.1:18000 [TASK-01.05].
 - 2026-11-26 — FastAPI app factory with `/api/v1/health/live` and `/api/v1/health/ready` (concurrent, time-bounded checks of PostgreSQL, Redis, Qdrant; 503 when any is down) [TASK-01.06].
 - 2026-11-26 — Local infrastructure: Docker Compose with PostgreSQL 17.12, Redis 7.4.12, Qdrant 1.20.2 (non-root), health checks, named volumes, localhost-only ports 15432/16379/16333/16334 [TASK-01.04].
 - 2026-11-26 — Typed settings (`app.config`): `CORTEX_*` env vars with nested groups, `.env.example`, staging/production refuse unsafe defaults, unknown variables rejected, secrets masked [TASK-01.03].

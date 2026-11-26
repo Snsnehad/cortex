@@ -57,6 +57,8 @@ Newest session first. Each entry is the handoff for the next session.
 - Found + fixed (ADR-018): `localhost` costs 2–10 s per async connection on Windows → defaults now `127.0.0.1`; psycopg async fails on the Proactor loop → selector loop in tests and `--loop asyncio:SelectorEventLoop` for non-reload uvicorn on Windows.
 - Mistake caught: first manual run left a stray uvicorn running (cleanup matched `python.exe` by a pattern that missed `uvicorn.exe"`), so a later run hit the old server. Now stopped by port owner; documented.
 
-**Exact next task:** **TASK-01.05** — `backend/Dockerfile` (multi-stage with uv, non-root, no dev deps, uvicorn with uvloop on Linux) + `api` service in compose with a health check on `/api/v1/health/ready`, using service hostnames (postgres, redis, qdrant) inside the compose network.
+- **TASK-01.05 COMPLETED** (branch `feat/TASK-01.05-api-dockerfile`, merged): `backend/Dockerfile` (python:3.12.16-slim-trixie, uv 0.13.6, two stages), `.dockerignore`, compose `api` service (profile `app`, 127.0.0.1:18000, read-only, cap_drop ALL, no-new-privileges). All verification passed (see tracker). Found + fixed: uvloop log spam during outages → `--loop asyncio` (ADR-019), proven with a side-by-side probe container (removed). API container stopped after verification; infra left running.
+
+**Exact next task:** **TASK-01.07** — structlog JSON logging, request-id middleware (accept/generate `X-Request-ID`), access log, redaction processor for password/token/authorization/api_key/secret; route uvicorn logs through the same pipeline.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

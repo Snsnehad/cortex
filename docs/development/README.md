@@ -107,3 +107,32 @@ How readiness works: `app/services/health.py` runs the checks concurrently, each
 ### Tests
 - `uv run pytest -m "not integration"` runs without Docker (health logic is tested with fake checks).
 - `tests/integration/test_health_ready.py` needs the compose stack. It checks the ready path and a real failure path (closed ports must return 503 within the timeout).
+
+## API container (TASK-01.05)
+
+`backend/Dockerfile` builds one image for the API (and later the Celery worker and beat). It is a two-stage build:
+1. **builder**: uv 0.13.6 installs the locked runtime dependencies (`uv sync --frozen --no-dev`) into `/opt/venv`. This layer only rebuilds when `pyproject.toml` or `uv.lock` change (cold build ~70 s, code-only rebuild ~13 s).
+2. **runtime**: `python:3.12.16-slim-trixie` + the venv + `app/`. No uv, no pytest/ruff/mypy, no tests, no `.env`.
+
+```powershell
+# Build and run the containerised API alongside the infrastructure (opt-in "app" profile)
+docker compose -f infra/compose/docker-compose.yml --profile app up -d --build --wait
+curl.exe http://127.0.0.1:18000/api/v1/health/ready
+docker compose -f infra/compose/docker-compose.yml --profile app stop api
+```
+
+Inside the compose network the API reaches `postgres:5432`, `redis:6379` and `qdrant:6333` by service name. Compose overrides the host-oriented `127.0.0.1:1xxxx` values for the container.
+
+**Hardening (verified):**
+
+| Control | Result |
+|---|---|
+| Non-root user | Runs as `cortex` (uid 10001) |
+| Read-only root filesystem | `/app` and `/opt/venv` can't be modified; only `/data/storage` (volume) and `/tmp` (tmpfs) are writable |
+| Linux capabilities | All dropped (`CapEff` = 0), plus `no-new-privileges` |
+| Server banner | Hidden (`--no-server-header`) |
+| Network exposure | Port bound to 127.0.0.1:18000 only |
+
+**Health check = liveness.** The Dockerfile `HEALTHCHECK` calls `/health/live`, not `/ready`. Orchestrators restart unhealthy containers, and a restart cannot fix a database outage. Verified: with Redis stopped, `/ready` returned 503 for 25 s while the container stayed `healthy` with 0 restarts. Readiness is for load balancers.
+
+**Event loop = asyncio (ADR-019).** uvloop logged "Future exception was never retrieved" on every probe during a dependency outage (cancelled DNS lookups). Measured in the same outage: uvloop 4 spurious log lines, asyncio 0, identical health results.

@@ -10,7 +10,11 @@
 # Host ports use a Cortex-specific block (15432, 16379, 16333/16334) so they never clash
 # with other local projects on the default 5432 / 6379 / 6333; inside Docker the
 # services keep their standard ports.
-# Application services (api, worker, beat) are added in TASK-01.05 / TASK-05.06.
+#
+# Application containers are opt-in via the "app" profile, because day-to-day development
+# runs the API on the host with --reload:
+#   docker compose -f infra/compose/docker-compose.yml --profile app up -d --build --wait
+# The containerised API listens on http://127.0.0.1:18000. Worker and beat: TASK-05.06.
 
 name: cortex
 
@@ -97,7 +101,44 @@ services:
       retries: 10
       start_period: 10s
 
+  api:
+    profiles: ["app"]
+    build:
+      context: ../../backend
+    image: cortex-backend:dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    # Inside the compose network services are reached by name on their standard ports,
+    # so the host-oriented values from .env (127.0.0.1:15432, …) are overridden here.
+    environment:
+      CORTEX_ENVIRONMENT: development
+      CORTEX_DATABASE__HOST: postgres
+      CORTEX_DATABASE__PORT: "5432"
+      CORTEX_DATABASE__USER: ${CORTEX_DATABASE__USER:-cortex}
+      CORTEX_DATABASE__PASSWORD: ${CORTEX_DATABASE__PASSWORD:-cortex}
+      CORTEX_DATABASE__NAME: ${CORTEX_DATABASE__NAME:-cortex}
+      CORTEX_REDIS__URL: redis://redis:6379/0
+      CORTEX_QDRANT__URL: http://qdrant:6333
+    ports:
+      - "127.0.0.1:18000:8000"
+    volumes:
+      - storage_data:/data/storage
+    # Hardening: immutable root filesystem, no Linux capabilities, no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    # Health check is defined in the Dockerfile (liveness on /api/v1/health/live).
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  storage_data:

@@ -1,0 +1,17 @@
+# Keep the build context small and secret-free: only pyproject.toml, uv.lock and app/
+# are needed by the Dockerfile.
+.venv/
+**/__pycache__/
+**/*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage*
+htmlcov/
+tests/
+.env
+.env.*
+*.log
+.data/
+Dockerfile
+.dockerignore
