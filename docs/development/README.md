@@ -19,6 +19,8 @@ Local setup details, dev scripts (TASK-01.08), worker operations, troubleshootin
 | `lint` | `ruff check`, `ruff format --check`, `mypy` |
 | `format` | `ruff format` + `ruff check --fix` |
 | `check` | `lint`, then `test`: what CI runs |
+| `migrate [revision]` | Apply migrations: latest by default; `-1` = one step back, `base` = remove all, or a revision id. Prints the current revision afterwards |
+| `revision "message"` | Autogenerate a migration from model changes. **Always review the generated file** |
 | `reset` | **Destructive:** removes containers and all Cortex volumes. Asks you to type `delete cortex data`; anything else (or no input) aborts |
 
 Exit codes: 0 on success, 1 when any step fails (failures of `docker`, `uv` and `pytest` propagate), 2 for an unknown command.
@@ -235,3 +237,35 @@ class KnowledgeBase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 - The engine is created in `create_app` (no I/O) and disposed in the lifespan shutdown.
 
 Naming convention results: `pk_<table>`, `uq_<table>_<cols>`, `ix_<table>_<cols>`, `fk_<table>_<cols>_<referred_table>`, `ck_<table>_<name>`.
+
+## Migrations (TASK-02.02)
+
+Alembic with the async engine. Configuration lives in `backend/alembic.ini` and `backend/migrations/env.py`.
+
+**Workflow for a schema change**
+1. Change or add a model in `app/models/`. A new module must also be imported in `app/models/__init__.py` (the model registry), or Alembic never sees it.
+2. `scripts\dev.cmd revision "add documents table"`: autogenerates `backend/migrations/versions/<date>_<time>-<rev>_<slug>.py`, formatted by ruff.
+3. **Review it by hand.** Autogenerate misses some things: renames (it sees drop + add), data migrations, `CHECK` constraint bodies, and extension or enum changes.
+4. `scripts\dev.cmd migrate`, then `scripts\dev.cmd check`.
+
+**Design choices**
+- **No URL in `alembic.ini`.** `env.py` uses the same `CORTEX_DATABASE__*` settings as the app. Tests and tools can override it via `config.attributes["database_url"]` (attributes, because configparser would interpret `%` in passwords).
+- Autogenerate compares **types and server defaults** too (`compare_type`, `compare_server_default`).
+- Constraint names come from the `Base` naming convention (`pk_…`, `uq_…`, `fk_…`, `ix_…`, `ck_…`), so later migrations can drop or alter them by name.
+- File names start with a UTC date and time, so `ls` shows them in order.
+- Logging uses the app's JSON pipeline; set `CORTEX_LOG_FORMAT=console` for readable CLI output.
+- On Windows, `env.py` runs on the selector event loop (psycopg, ADR-018).
+- Migrations ship in the Docker image: `docker run <image> alembic upgrade head` runs the exact schema version that matches the code (verified read-only, no capabilities).
+
+**Safety net (`tests/integration/test_migrations.py`, each test on its own scratch database)**
+
+| Test | Catches |
+|---|---|
+| round trip (head → base → head) | a downgrade that leaves tables behind; a migration that cannot be re-applied |
+| stairway (each revision up, down, up) | a broken `downgrade()` in any single revision |
+| models ↔ migrations in sync | a model change without a migration, or the reverse |
+| single head | two branches that both added a migration (needs `alembic merge`) |
+| no URL in `alembic.ini` | credentials creeping into config files |
+| offline SQL | `alembic upgrade head --sql` for reviewing SQL without a database |
+
+These tests were proven to have teeth with a temporary probe model (see the TASK-02.02 session log): the drift test failed without a migration and passed after `revision`, and the round-trip and stairway tests failed when `downgrade()` was broken.

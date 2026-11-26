@@ -20,6 +20,9 @@
         lint                  ruff check + ruff format --check + mypy (what CI runs).
         format                Apply ruff formatting and safe lint fixes.
         check                 lint, then test: everything CI checks.
+        migrate [revision]    Apply migrations: latest by default; "-1" = one step back,
+                              "base" = remove all, or a revision id.
+        revision "message"    Autogenerate a migration from model changes (review it!).
         reset                 DESTRUCTIVE: delete all local Cortex data (volumes).
                               Asks you to type a confirmation phrase.
 #>
@@ -30,7 +33,7 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$Commands = @("help", "up", "down", "ps", "logs", "api", "test", "lint", "format", "check", "reset")
+$Commands = @("help", "up", "down", "ps", "logs", "api", "test", "lint", "format", "check", "migrate", "revision", "reset")
 $Command = "help"
 $App = $false
 $Follow = $false
@@ -158,6 +161,23 @@ try {
             )
         }
         "test" { Invoke-Tests $Rest }
+        "migrate" {
+            $target = "head"
+            if ($Rest.Count -gt 0) { $target = [string]$Rest[0] }
+            # Alembic moves backwards only with "downgrade" (relative "-N" or "base").
+            $direction = "upgrade"
+            if ($target -eq "base" -or $target.StartsWith("-")) { $direction = "downgrade" }
+            Write-Step "alembic $direction $target"
+            Invoke-InBackend "uv" @("run", "alembic", $direction, $target)
+            Invoke-InBackend "uv" @("run", "alembic", "current")
+        }
+        "revision" {
+            if ($Rest.Count -eq 0) { throw 'A message is required: revision "add documents table"' }
+            $message = ($Rest -join " ")
+            Write-Step "alembic revision --autogenerate -m `"$message`""
+            Invoke-InBackend "uv" @("run", "alembic", "revision", "--autogenerate", "-m", $message)
+            Write-Host "Review the new file in backend\migrations\versions before committing." -ForegroundColor Yellow
+        }
         "lint" { Invoke-Lint }
         "format" {
             Write-Step "ruff format"

@@ -53,6 +53,10 @@ WORKDIR /app
 # Code is owned by root and only readable by the app user: a compromised process cannot
 # modify the application it is running.
 COPY app ./app
+# Migrations ship in the same image, so a deployment runs exactly the schema changes that
+# match its code:  docker run <image> alembic upgrade head
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 USER cortex:cortex
 EXPOSE 8000

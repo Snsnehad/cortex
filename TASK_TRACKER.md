@@ -11,7 +11,7 @@
 |---|---|---|---|
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
-| PHASE-02 | Database & backend foundation | IN_PROGRESS | 1 / 8 |
+| PHASE-02 | Database & backend foundation | IN_PROGRESS | 2 / 8 |
 | PHASE-03 | Auth & multi-tenancy | NOT_STARTED | 0 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-02.02 — Alembic async setup (env.py on Base.metadata) + CI migration round-trip test.
-**Next task:** TASK-02.03 (users, organizations, memberships, refresh_tokens models + migration).
+**Current task:** TASK-02.03 — models + first migration: users, organizations, organization_memberships, refresh_tokens.
+**Next task:** TASK-02.04 (knowledge_bases, documents, document_chunks, processing_jobs).
 
 ## Known blockers
 
@@ -77,7 +77,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
 | TASK-02.01 | Engine, session, Base, mixins | COMPLETED | 01.06 | app/database/{base,session}.py, app/dependencies/database.py, app/utils/ids.py, app/main.py (engine on app.state, lifespan dispose), docs/development/README.md, TECH_STACK.md | tests/unit/test_ids.py (6), tests/unit/test_database_base.py (6), tests/integration/test_database_session.py (9) | ruff · mypy · pytest 140 passed · against PostgreSQL: UUIDv7 + server timestamps, updated_at readable after UPDATE (eager_defaults), failed request rolled back, 100 requests (10 failing) → 0 checked out, 40 concurrent → within pool limits, lifespan disposes pool · pg_stat_activity: 0 cortex connections left, 0 leftover test tables | SQLAlchemy 2.1.9 (current stable; plan said 2.0, same API). Own UUIDv7 (Python 3.12 lacks uuid.uuid7) |
-| TASK-02.02 | Alembic async + round-trip test | NOT_STARTED | 02.01 | | | | |
+| TASK-02.02 | Alembic async + round-trip test | COMPLETED | 02.01 | backend/alembic.ini, backend/migrations/{env.py, script.py.mako, README, versions/.gitkeep}, app/models/__init__.py (registry), backend/Dockerfile (ships migrations), backend/pyproject.toml (alembic; mypy on env.py), scripts/dev.ps1 (migrate, revision), docs/development/README.md | tests/integration/test_migrations.py (6: no URL in ini, single head, round trip, stairway, models/migrations drift, offline SQL) | ruff · mypy · pytest 146 passed · probe-model proof: drift test FAILED without a migration → `dev revision` produced a pk_/uq_-named, ruff-formatted file → all 6 PASSED → broken downgrade() made round trip + stairway FAIL → `dev migrate` / `migrate -1` on dev DB OK → probe fully removed · `alembic upgrade head` inside the read-only container OK · 0 scratch DBs left | Alembic 1.20.1. No revisions yet (first real one in TASK-02.03); dev DB has an empty alembic_version table |
 | TASK-02.03 | Users/orgs/memberships/refresh_tokens | NOT_STARTED | 02.02 | | | | |
 | TASK-02.04 | KBs/documents/chunks/jobs (+composite FKs, partial uniques) | NOT_STARTED | 02.03 | | | | |
 | TASK-02.05 | Conversations/messages/citations/usage_events | NOT_STARTED | 02.04 | | | | |
