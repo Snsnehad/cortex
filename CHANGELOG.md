@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-26 — Consistent error responses: domain exceptions mapped centrally to `{"error": {code, message, details, request_id}}` for every non-2xx (including 404/405/422/500); 422 no longer echoes submitted values; unexpected errors return a generic 500 and are logged once with the request id [TASK-02.06].
 - 2026-11-26 — Chat and usage schema: conversations (KB tenant FK; ownership requires organization membership), messages (role/status CHECKs, token/latency metrics, retrieval trace), citations (snapshot that survives document deletion), usage events (exact numeric(12,6) costs that survive deletions) [TASK-02.05].
 - 2026-11-26 — Document schema: knowledge bases (soft delete, per-org case-insensitive names, chunking CHECKs), documents (per-KB de-duplication via partial unique index), chunks (deterministic ids, range CHECKs), processing jobs (one active job per document). Composite foreign keys make cross-tenant and cross-KB rows impossible at the database level [TASK-02.04].
 - 2026-11-26 — Identity schema: users (case-insensitive unique email), organizations, organization memberships (OWNER/ADMIN/MEMBER with a database CHECK), refresh tokens (hashed, rotation family, self-reference); first migration; relationships require explicit loading [TASK-02.03].

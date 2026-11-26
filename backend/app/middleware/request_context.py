@@ -10,6 +10,8 @@ For every HTTP request:
    to server logs.
 4. Emit one access-log event: method, path, status, duration. The query string is never
    logged because it can carry tokens or personal data.
+5. Turn any unexpected exception into the generic 500 error envelope, logging the traceback
+   exactly once, with the request id (TASK-02.06).
 
 Written as pure ASGI rather than Starlette's ``BaseHTTPMiddleware``, which has known problems
 with streaming responses (SSE, planned for chat) and context-variable propagation.
@@ -24,6 +26,7 @@ import structlog
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.errors import internal_error_response
 from app.core.logging import get_logger
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -55,12 +58,14 @@ class RequestContextMiddleware:
 
         request_id = _incoming_request_id(scope) or uuid.uuid4().hex
         status_code = 500  # if the app fails before sending a response
+        response_started = False
         started = time.perf_counter()
 
         async def send_with_request_id(message: Message) -> None:
-            nonlocal status_code
+            nonlocal status_code, response_started
             if message["type"] == "http.response.start":
                 status_code = message["status"]
+                response_started = True
                 MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
             await send(message)
 
@@ -69,10 +74,17 @@ class RequestContextMiddleware:
                 await self.app(scope, receive, send_with_request_id)
             except Exception:
                 status_code = 500
-                # Logged here, inside the request context, so the traceback carries the
-                # request_id. Re-raised so Starlette still produces the 500 response.
+                # Logged exactly once, here, inside the request context so the traceback
+                # carries the request_id.
                 logger.exception("http.unhandled_exception")
-                raise
+                if response_started:
+                    # Too late for a clean error response (e.g. mid-stream): let the server
+                    # abort the connection.
+                    raise
+                # Answer with the generic envelope ourselves and do NOT re-raise: otherwise
+                # Starlette and uvicorn would each log the same traceback again, without
+                # the request id.
+                await internal_error_response()(scope, receive, send_with_request_id)
             finally:
                 self._log_access(scope, status_code, started)
 

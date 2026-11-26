@@ -269,3 +269,41 @@ Alembic with the async engine. Configuration lives in `backend/alembic.ini` and 
 | offline SQL | `alembic upgrade head --sql` for reviewing SQL without a database |
 
 These tests were proven to have teeth with a temporary probe model (see the TASK-02.02 session log): the drift test failed without a migration and passed after `revision`, and the round-trip and stairway tests failed when `downgrade()` was broken.
+
+## Errors (TASK-02.06)
+
+Services raise **domain errors** from `app/core/errors.py`; they never raise `HTTPException` and never import FastAPI. The API layer (`app/api/errors.py`) maps them to status codes in one table, `STATUS_BY_ERROR`.
+
+```python
+from app.core.errors import ConflictError, NotFoundError
+
+raise NotFoundError("Knowledge base not found", code="KNOWLEDGE_BASE_NOT_FOUND")
+raise ConflictError(
+    "This file already exists in the knowledge base.",
+    code="DOCUMENT_DUPLICATE",
+    details={"existing_document_id": str(existing.id)},
+)
+```
+
+| Error | Status | Default code |
+|---|---|---|
+| `AuthenticationError` | 401 (+ `WWW-Authenticate: Bearer`) | `UNAUTHENTICATED` |
+| `PermissionDeniedError` | 403 | `PERMISSION_DENIED` |
+| `NotFoundError` | 404 (also for other tenants' resources: never confirm existence) | `NOT_FOUND` |
+| `ConflictError` | 409 | `CONFLICT` |
+| `PayloadTooLargeError` | 413 | `PAYLOAD_TOO_LARGE` |
+| `UnsupportedMediaTypeError` | 415 | `UNSUPPORTED_MEDIA_TYPE` |
+| `ValidationFailedError` | 422 (business rules; schema errors come from FastAPI) | `VALIDATION_ERROR` |
+| `RateLimitedError(retry_after_seconds=…)` | 429 (+ `Retry-After`) | `RATE_LIMITED` |
+| `UpstreamUnavailableError` | 503 | `UPSTREAM_UNAVAILABLE` |
+| plain `AppError` | 400 | `ERROR` |
+| anything unexpected | 500 | `INTERNAL_ERROR` (fixed generic message) |
+
+Every error body: `{"error": {"code", "message", "details", "request_id"}}`; `request_id` equals the `X-Request-ID` header.
+
+**Rules**
+- `message` and `details` are sent to the client: no secrets, SQL, stack traces or other tenants' data.
+- Codes are a public contract: pick specific ones (`DOCUMENT_DUPLICATE`) and never rename them.
+- A new `AppError` subclass must be added to `STATUS_BY_ERROR` (a test fails otherwise).
+- 422 field errors contain only `loc`, `msg` and `type`. FastAPI's default would echo the submitted value, e.g. a password.
+- Unexpected exceptions are logged **once** by `RequestContextMiddleware`, with the request id and a redacted, structured traceback. Verified on a real uvicorn: 1 log record, 0 uvicorn duplicates, 0 plain-text tracebacks.

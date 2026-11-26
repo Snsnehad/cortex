@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.db_engine = create_engine(settings)
     app.state.session_factory = create_session_factory(app.state.db_engine)
     app.include_router(api_router, prefix=API_V1_PREFIX)
+    register_exception_handlers(app)
     app.add_middleware(RequestContextMiddleware, quiet_paths=HEALTH_PATHS)
 
     logger.info(
