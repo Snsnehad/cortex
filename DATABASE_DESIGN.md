@@ -45,7 +45,7 @@ erDiagram
 | last_login_at | timestamptz NULL | |
 | created_at / updated_at | timestamptz | |
 
-Indexes: `uq_users_email_lower UNIQUE (lower(email))`.
+Indexes: `uq_users_email_lower UNIQUE (lower(email))`. (Implementation note: the index must be built from the column, `func.lower(User.email)`. `func.lower("email")` lower-cases the string literal `'email'`, a constant that would allow only one user. The test `test_different_emails_can_both_register` guards this.)
 
 ### organizations
 | Column | Type | Notes |
@@ -76,8 +76,8 @@ Indexes: `UNIQUE (organization_id, user_id)` (also serves the membership lookup 
 | token_hash | char(64) NOT NULL UNIQUE | SHA-256 hex of the opaque token; raw token never stored |
 | expires_at | timestamptz NOT NULL | |
 | revoked_at | timestamptz NULL | |
-| replaced_by_id | uuid NULL FK refresh_tokens | set on rotation; reuse of a replaced token ⇒ revoke family |
-| created_at | timestamptz | |
+| replaced_by_id | uuid NULL FK refresh_tokens ON DELETE SET NULL | set on rotation; reuse of a replaced token ⇒ revoke family |
+| created_at / updated_at | timestamptz | `updated_at` from the shared TimestampMixin; useful for revocation audits (implemented in TASK-02.03) |
 | user_agent | varchar(300) NULL | for "active sessions" display |
 
 Indexes: `ix (user_id)`, `ix (family_id)`. Expired rows purged by a beat task.
