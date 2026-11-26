@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-26 — JWT access tokens: HS256 pinned, all claims required (`typ`, `iss`, `aud`, `jti` …), dedicated derived key, user id only, `TOKEN_EXPIRED` vs `INVALID_TOKEN` (401) [TASK-03.02].
 - 2026-11-26 — Password hashing with Argon2id (OWASP parameters, transparent rehash on login, NFKC normalisation, constant-time dummy verify, off-event-loop async API) and a NIST-style password policy [TASK-03.01].
 - 2026-11-26 — Test harness: random test order on every run (pytest-randomly), integration tests auto-marked by folder, persisted factories, an `api_client` on the migrated scratch database, faster isolation (integration suite ~43 s → ~28 s), and docs/testing/README.md [TASK-02.08].
 - 2026-11-26 — Keyset pagination for list endpoints: `{items, next_cursor, has_more}`, signed cursors bound to one listing, stable under concurrent inserts/deletes, 400 `INVALID_CURSOR` for any bad cursor [TASK-02.07].

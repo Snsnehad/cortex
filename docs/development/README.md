@@ -355,3 +355,24 @@ await hasher.dummy_verify_async(raw)           # unknown email: same timing as a
 - **Always use the `*_async` methods from async code.** Hashing is CPU-bound and would otherwise stall the event loop for every other request (a test proves the async path keeps the loop responsive).
 - Policy: 12 to 128 characters, not only whitespace, not the email or its local part. No "must contain a symbol" rules (NIST SP 800-63B). Input is NFKC-normalised, so equivalent Unicode forms match.
 - A corrupt or foreign hash in the database verifies as `False`; it never crashes a login.
+
+## Access tokens (TASK-03.02, ADR-006)
+
+`app/core/tokens.py`, available as `app.state.access_tokens`:
+
+```python
+issued = tokens.issue(user.id)             # AccessToken(token, expires_at, expires_in)
+claims = tokens.verify(bearer_token)       # AccessTokenClaims(user_id, token_id, issued_at, expires_at)
+```
+
+| Property | Value |
+|---|---|
+| Algorithm | HS256, **pinned on verify** (`alg: none` and other algorithms rejected, even if correctly signed) |
+| Lifetime | `CORTEX_AUTH__ACCESS_TOKEN_TTL_SECONDS` (default 900 s), 30 s clock-skew leeway |
+| Required claims | `sub` (user id), `iat`, `exp`, `jti`, `typ="access"`, `iss="cortex"`, `aud="cortex-api"` |
+| Signing key | Derived from the JWT secret for this purpose only (the raw secret cannot sign valid tokens; tested) |
+| Errors | `TOKEN_EXPIRED` → refresh; `INVALID_TOKEN` → log in again. Both 401 with `WWW-Authenticate: Bearer` |
+
+- Tokens carry **only the user id**. JWTs are signed, not encrypted: anyone holding one can read it.
+- Roles are **not** in the token. Permissions are checked per request against `organization_memberships`, so a role change or removal applies immediately rather than after up to 15 minutes.
+- Access tokens are not revocable individually (ADR-006). Logout revokes the refresh-token family; an already-issued access token stays valid until it expires (≤ 15 min).
