@@ -77,7 +77,7 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Context**: Popular libraries add little over ~40 lines of Redis logic and some are poorly maintained.
 * **Decision**: Small limiter (sorted-set or fixed-window-with-weight) used as a FastAPI dependency with per-route policies. Fail-closed on auth routes, fail-open elsewhere when Redis is down.
 * **Consequences**: Fully understood and tested code; one less dependency.
-* **Implementation (TASK-03.07, 2026-11-27)**: sliding-window *log* (one sorted set per key) in a single Lua script, so check-and-record is atomic (30 concurrent requests against a limit of 5 → exactly 5 pass; a non-atomic variant fails the test). Clock = Redis `TIME` (shared across API processes). Rejections are not recorded. Keys hold `sha256(identity)`, never a raw IP or email. Every policy so far guards auth, so all fail closed.
+* **Implementation (TASK-03.07, 2026-11-27)**: sliding-window *log* (one sorted set per key) in a single Lua script, so check-and-record is atomic (30 concurrent requests against a limit of 5 → exactly 5 pass; a non-atomic variant fails the test). Clock = Redis `TIME` (shared across API processes). Rejections are not recorded. Keys hold `sha256(identity)`, never a raw IP or email. Auth policies fail closed; the upload quota (TASK-04.05) fails open, because it limits cost rather than protecting credentials.
 
 ### ADR-012 — Local ONNX models (FastEmbed) for dense, sparse and reranking by default
 * **Status**: Accepted (2026-11-26)

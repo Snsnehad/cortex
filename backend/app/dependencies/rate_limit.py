@@ -44,6 +44,7 @@ class RateLimitGuard:
         self.login_ip = RateLimitPolicy("login_ip", config.login_per_ip_per_minute, 60)
         self.login_email = RateLimitPolicy("login_email", config.login_per_email_per_minute, 60)
         self.register_ip = RateLimitPolicy("register_ip", config.register_per_ip_per_hour, 3600)
+        self.upload_user = RateLimitPolicy("upload_user", config.upload_per_user_per_hour, 3600)
 
     async def check(
         self, policy: RateLimitPolicy, identity: str, *, fail_closed: bool = True

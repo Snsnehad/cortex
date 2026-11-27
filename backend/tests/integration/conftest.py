@@ -125,7 +125,7 @@ def session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 
 
 @pytest.fixture
-def test_settings(migrated_database_url: str) -> Settings:
+def test_settings(migrated_database_url: str, tmp_path: Path) -> Settings:
     """Application settings pointing at the migrated scratch database (credentials from the
     environment / .env, exactly like the developer's own setup)."""
     base = Settings()
@@ -133,6 +133,10 @@ def test_settings(migrated_database_url: str) -> Settings:
     return base.model_copy(
         update={
             "database": base.database.model_copy(update={"name": scratch_name}),
+            # Uploaded files go to this test's temp dir, never into the repository.
+            "storage": base.storage.model_copy(
+                update={"backend": "local", "local_root": tmp_path / "storage"}
+            ),
             # A key namespace of its own per test (no counts leak between tests or runs), and
             # limits high enough that ordinary auth tests never hit them. Rate-limit tests
             # set their own low limits.
@@ -142,6 +146,7 @@ def test_settings(migrated_database_url: str) -> Settings:
                     "login_per_ip_per_minute": 10_000,
                     "login_per_email_per_minute": 10_000,
                     "register_per_ip_per_hour": 10_000,
+                    "upload_per_user_per_hour": 10_000,
                 }
             ),
         }

@@ -48,10 +48,10 @@ class LocalStorage:
     name = "local"
 
     def __init__(self, root: Path) -> None:
-        root.mkdir(parents=True, exist_ok=True)
-        self._root = root.resolve(strict=True)
+        # No disk access here: the app builds its storage at startup, and a container with a
+        # read-only filesystem must still start. Folders are created on the first write.
+        self._root = root.resolve(strict=False)
         self._temp_dir = self._root / TEMP_DIR_NAME
-        self._temp_dir.mkdir(exist_ok=True)
 
     @property
     def root(self) -> Path:
@@ -76,6 +76,7 @@ class LocalStorage:
     ) -> StoredObject:
         path = self.path_for(key)
         await to_thread.run_sync(lambda: path.parent.mkdir(parents=True, exist_ok=True))
+        await to_thread.run_sync(lambda: self._temp_dir.mkdir(parents=True, exist_ok=True))
         temp = self._temp_dir / f"{uuid.uuid4().hex}.tmp"
         meter = ContentMeter(max_bytes)
         handle: BinaryIO = await to_thread.run_sync(temp.open, "xb")
@@ -116,6 +117,9 @@ class LocalStorage:
     async def delete(self, key: str) -> None:
         path = self.path_for(key)
         await to_thread.run_sync(lambda: path.unlink(missing_ok=True))
+
+    async def aclose(self) -> None:
+        """Nothing to release (part of the StorageBackend contract)."""
 
     async def presigned_get_url(
         self, key: str, *, filename: str, expires_in_seconds: int

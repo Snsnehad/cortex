@@ -1,5 +1,5 @@
 """Adding documents to a knowledge base: de-duplication, storage, the document row
-(TASK-04.04; the processing job and the HTTP endpoint are TASK-04.05).
+(TASK-04.04) and its first processing job (TASK-04.05).
 
 The same bytes may live in a knowledge base only once (documents being deleted do not
 count). ``add`` runs in three steps, and no database transaction stays open while the file
@@ -9,8 +9,11 @@ travels to storage:
    Then 409 ``DOCUMENT_DUPLICATE`` with ``details.existing_document_id``, and **nothing is
    stored**. This is the common case and costs one indexed lookup.
 2. **Store** the file under a key built from ids (``orgs/…/kbs/…/docs/<new id>/original``).
-3. **Insert** the document (``PENDING``) in a short transaction that first locks the
-   knowledge base ``FOR SHARE``, so it cannot be soft-deleted halfway.
+3. **Insert** the document (``PENDING``) **and** its ``INGEST`` job (``QUEUED``) in one short
+   transaction that first locks the knowledge base ``FOR SHARE``, so it cannot be
+   soft-deleted halfway. Both rows exist or neither does: a worker never sees a document
+   without a job, or a job without a document. Until Celery arrives (Phase 5) the job simply
+   waits in ``QUEUED``; the reconciler enqueues jobs it finds there.
 
 Two identical uploads at the same moment both pass step 1. The partial unique index
 ``uq_documents_kb_content_hash_active`` lets exactly one insert succeed. The loser deletes
@@ -23,6 +26,7 @@ fails, the key is logged (``document.cleanup_failed``) for the Phase 5 reconcile
 
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import IO
 
 from anyio import CancelScope, to_thread
@@ -32,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 from app.core.tenancy import OrgContext
-from app.models import Document, DocumentStatus
+from app.models import Document, DocumentStatus, JobStatus, JobType, ProcessingJob
 from app.repositories.documents import DocumentRepository
 from app.repositories.knowledge_bases import KnowledgeBaseRepository
 from app.services.knowledge_bases import KnowledgeBaseNotFoundError
@@ -53,6 +57,12 @@ class DocumentDuplicateError(ConflictError):
     def __init__(self, existing_document_id: uuid.UUID) -> None:
         super().__init__(details={"existing_document_id": str(existing_document_id)})
         self.existing_document_id = existing_document_id
+
+
+@dataclass(frozen=True, slots=True)
+class AddedDocument:
+    document: Document
+    job: ProcessingJob
 
 
 class StoredContentMismatchError(RuntimeError):
@@ -77,13 +87,24 @@ class DocumentService:
         self._documents = DocumentRepository(session)
         self._knowledge_bases = KnowledgeBaseRepository(session)
 
+    async def require_knowledge_base(self, ctx: OrgContext, knowledge_base_id: uuid.UUID) -> None:
+        """404 now, before the client sends megabytes to a knowledge base that is not there
+        (or belongs to another organization). ``add`` checks again; this is only early."""
+        found = await self._knowledge_bases.get_active(ctx.organization_id, knowledge_base_id)
+        # End the read-only transaction (no transaction stays open while the body streams
+        # in). commit(), not rollback(): rollback expires every loaded object, including the
+        # caller's User in ctx, and touching it later would need a lazy (sync) refresh.
+        await self._session.commit()
+        if found is None:
+            raise KnowledgeBaseNotFoundError
+
     async def add(
         self,
         ctx: OrgContext,
         knowledge_base_id: uuid.UUID,
         upload: ReceivedFile,
         detected: DetectedType,
-    ) -> Document:
+    ) -> AddedDocument:
         org_id = ctx.organization_id
         # 1. Pre-check, then end the read transaction before the slow storage write.
         if await self._knowledge_bases.get_active(org_id, knowledge_base_id) is None:
@@ -91,10 +112,8 @@ class DocumentService:
         existing = await self._documents.find_active_by_hash(
             org_id, knowledge_base_id, upload.sha256
         )
-        # Read the id BEFORE rollback: rollback expires every loaded object, and touching an
-        # expired attribute would trigger a lazy refresh (not allowed in async code).
         existing_id = existing.id if existing is not None else None
-        await self._session.rollback()
+        await self._session.commit()  # end the read transaction; see require_knowledge_base
         if existing_id is not None:
             raise DocumentDuplicateError(existing_id)
 
@@ -124,7 +143,7 @@ class DocumentService:
         key: str,
         upload: ReceivedFile,
         detected: DetectedType,
-    ) -> Document:
+    ) -> AddedDocument:
         org_id = ctx.organization_id
         locked = await self._knowledge_bases.get_active(org_id, knowledge_base_id, for_share=True)
         if locked is None:  # deleted while the file was being stored
@@ -142,7 +161,14 @@ class DocumentService:
             storage_key=key,
             status=DocumentStatus.PENDING,
         )
+        job = ProcessingJob(
+            organization_id=org_id,
+            document_id=document_id,
+            job_type=JobType.INGEST,
+            status=JobStatus.QUEUED,
+        )
         self._documents.add(document)
+        self._documents.add_job(job)
         try:
             await self._session.commit()
         except IntegrityError as exc:
@@ -172,8 +198,9 @@ class DocumentService:
             knowledge_base_id=str(knowledge_base_id),
             size_bytes=upload.size_bytes,
             mime_type=detected.mime_type,
+            job_id=str(job.id),
         )
-        return document
+        return AddedDocument(document, job)
 
     async def _discard(self, key: str) -> None:
         try:

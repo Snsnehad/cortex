@@ -26,6 +26,7 @@ from app.core.tokens import AccessTokenService
 from app.database.session import create_engine, create_session_factory
 from app.dependencies.rate_limit import RateLimitGuard
 from app.middleware.request_context import RequestContextMiddleware
+from app.storage import create_storage
 
 API_V1_PREFIX = "/api/v1"
 APP_VERSION = "0.1.0"
@@ -41,7 +42,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # instead of connections dropped mid-session.
     await app.state.db_engine.dispose()
     await app.state.redis.aclose()
-    logger.info("app.shutdown", db_pool="disposed", redis="closed")
+    await app.state.storage.aclose()
+    logger.info("app.shutdown", db_pool="disposed", redis="closed", storage="closed")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -82,6 +84,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.rate_limits = RateLimitGuard(
         RateLimiter(app.state.redis, key_prefix=settings.rate_limit.key_prefix), settings
     )
+    # File storage (local or S3). Building it touches neither disk nor network.
+    app.state.storage = create_storage(settings.storage)
     app.include_router(api_router, prefix=API_V1_PREFIX)
     register_exception_handlers(app)
     app.add_middleware(RequestContextMiddleware, quiet_paths=HEALTH_PATHS)

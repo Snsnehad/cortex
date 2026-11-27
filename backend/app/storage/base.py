@@ -98,6 +98,10 @@ class StorageBackend(Protocol):
         """Remove an object; deleting a missing key is not an error (idempotent)."""
         ...
 
+    async def aclose(self) -> None:
+        """Release connections; called once on application shutdown."""
+        ...
+
     async def presigned_get_url(
         self, key: str, *, filename: str, expires_in_seconds: int
     ) -> str | None:

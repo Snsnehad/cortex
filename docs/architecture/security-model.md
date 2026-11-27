@@ -114,6 +114,7 @@ stateDiagram-v2
 |---|---|
 | `POST /auth/login` | 10/min per IP **and** 5/min per account (email trimmed + lower-cased) |
 | `POST /auth/register` | 5/hour per IP |
+| `POST …/knowledge-bases/{kb_id}/documents` | 30/hour per user (fails **open**: a soft quota, not a security control) |
 
 - Redis sliding-window log in one Lua script: atomic (concurrency-tested), Redis clock, rejections not counted. Over the limit: 429 `RATE_LIMITED` + `Retry-After`.
 - The per-account limit is checked **before** the slow password hash.

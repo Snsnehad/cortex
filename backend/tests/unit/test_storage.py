@@ -325,10 +325,17 @@ async def test_local_has_no_direct_urls(local_storage: LocalStorage) -> None:
     assert await local_storage.presigned_get_url(KEY, filename="a", expires_in_seconds=60) is None
 
 
-def test_factory_builds_the_configured_backend(tmp_path: Path) -> None:
+async def test_factory_builds_the_configured_backend_without_touching_disk(
+    tmp_path: Path,
+) -> None:
     local = create_storage(StorageSettings(backend="local", local_root=tmp_path / "files"))
     assert isinstance(local, LocalStorage)
+    # Built at app startup: must not write (read-only container filesystem).
+    assert not (tmp_path / "files").exists()
+
+    await local.put(KEY, CONTENT, content_type="text/plain")
     assert (tmp_path / "files").is_dir()
+    await local.aclose()
 
 
 # --- S3 backend -----------------------------------------------------------------------------

@@ -70,12 +70,13 @@ async def add(
 ) -> Document:
     async with factory() as session:
         service = DocumentService(session, storage)
-        return await service.add(
+        added = await service.add(
             kwargs.get("ctx", world["ctx"]),
             kwargs.get("kb_id", world["kb"].id),
             kwargs.get("upload", upload()),
             TEXT,
         )
+        return added.document
 
 
 async def documents(factory: Factory) -> list[Document]:

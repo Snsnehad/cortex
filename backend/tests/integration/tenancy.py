@@ -71,6 +71,8 @@ class IsolationCase:
     method: str
     path: str  # as declared by FastAPI, e.g. /api/v1/orgs/{org_id}/members/{user_id}
     body: Callable[[World], dict[str, Any]] | None = None
+    # Multipart file fields instead of a JSON body: {"file": (name, bytes, content type)}.
+    files: Callable[[World], dict[str, Any]] | None = None
     # Status organization A's owner gets with the same request (the positive control).
     ok_status: int = 200
     resource_params: Sequence[str] = field(default=())
@@ -120,6 +122,14 @@ ISOLATION_CASES: list[IsolationCase] = [
     IsolationCase(
         "DELETE",
         f"{ORG_PREFIX}/knowledge-bases/{{kb_id}}",
+        ok_status=202,
+        resource_params=("kb_id",),
+    ),
+    # --- documents (TASK-04.05) ---
+    IsolationCase(
+        "POST",
+        f"{ORG_PREFIX}/knowledge-bases/{{kb_id}}/documents",
+        files=lambda w: {"file": ("intruder.txt", b"planted by another tenant", "text/plain")},
         ok_status=202,
         resource_params=("kb_id",),
     ),

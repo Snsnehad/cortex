@@ -541,4 +541,17 @@ finally:
 
 - A lost race on `uq_documents_kb_content_hash_active` deletes the just-stored object and returns 409 with the **winner's** id.
 - Any failure after step 2 begins, including cancellation, deletes the object inside a shielded `CancelScope`; if that fails too, `document.cleanup_failed` is logged with the key (never the filename).
-- **Async SQLAlchemy pitfall:** `session.rollback()` expires every loaded object. Read the attributes you need (ids) *before* rolling back, or the access triggers a lazy refresh and fails with `MissingGreenlet`.
+- **Async SQLAlchemy pitfall:** `session.rollback()` expires **every** loaded object in the session, including the request's `ctx.user`. Touching an expired attribute later triggers a lazy refresh and fails with `MissingGreenlet` (a 500). So: end a read-only transaction with `commit()` (with `expire_on_commit=False` nothing is expired); use `rollback()` only after a failure, and read the values you still need (ids) before calling it.
+
+## Upload endpoint (TASK-04.05)
+
+`POST /api/v1/orgs/{org_id}/knowledge-bases/{kb_id}/documents` (`app/api/v1/documents.py`). Try it in Swagger UI (`/api/v1/docs`: the route documents its multipart body) or:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/api/v1/orgs/<org_id>/knowledge-bases/<kb_id>/documents" -H "Authorization: Bearer <access token>" -F "file=@handbook.pdf"
+```
+
+- The route takes the raw `Request` (never `UploadFile`, ADR-023) and checks, cheapest first: membership → upload quota (30/hour per user, fails open) → knowledge base exists (before reading the body) → streamed size limit → type from bytes → duplicate → store → document + job in one transaction → **202** `{document, job}`.
+- Storage comes from `StorageDep` (`app.state.storage`, built by `create_storage` at startup; it touches no disk or network until used, and `aclose()` runs on shutdown).
+- The job stays `QUEUED` until the Phase 5 worker exists; nothing processes it yet.
+- In tests, `test_settings` stores files under the test's `tmp_path`, never in the repository.

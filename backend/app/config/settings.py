@@ -171,6 +171,7 @@ class RateLimitSettings(BaseModel):
     login_per_ip_per_minute: int = Field(default=10, ge=1)
     login_per_email_per_minute: int = Field(default=5, ge=1)
     register_per_ip_per_hour: int = Field(default=5, ge=1)
+    upload_per_user_per_hour: int = Field(default=30, ge=1)
     # How long a rate-limit check may wait for Redis before giving up.
     redis_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
 

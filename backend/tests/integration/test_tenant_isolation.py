@@ -60,6 +60,7 @@ async def send(
         case.method,
         path,
         json=case.body(world) if case.body else None,
+        files=case.files(world) if case.files else None,
         headers={"Authorization": f"Bearer {token}"},
     )
 

@@ -163,6 +163,10 @@ class S3Storage:
         # S3 DeleteObject succeeds for missing keys, so this is idempotent as required.
         await self._call(lambda: self._client.delete_object(Bucket=self._bucket, Key=key))
 
+    async def aclose(self) -> None:
+        """Close the client's HTTP connection pool (on application shutdown)."""
+        await to_thread.run_sync(self._client.close)
+
     async def presigned_get_url(
         self, key: str, *, filename: str, expires_in_seconds: int
     ) -> str | None:

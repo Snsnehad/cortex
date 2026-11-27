@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Document, DocumentStatus
+from app.models import Document, DocumentStatus, ProcessingJob
 
 
 class DocumentRepository:
@@ -18,6 +18,9 @@ class DocumentRepository:
 
     def add(self, document: Document) -> None:
         self._session.add(document)
+
+    def add_job(self, job: ProcessingJob) -> None:
+        self._session.add(job)
 
     async def find_active_by_hash(
         self, organization_id: uuid.UUID, knowledge_base_id: uuid.UUID, content_hash: str

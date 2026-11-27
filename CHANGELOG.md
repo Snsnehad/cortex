@@ -5,9 +5,11 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Fixed
+- 2026-11-27 — Local storage no longer creates folders when the app starts (it would fail on a read-only container filesystem); folders are created on the first upload [TASK-04.05].
 - 2026-11-27 — Local storage: temporary files now live in `<root>/.tmp/`, so real document paths stay under Windows' 260-character limit [TASK-04.04].
 
 ### Added
+- 2026-11-27 — Upload endpoint `POST /orgs/{org_id}/knowledge-bases/{kb_id}/documents`: any member uploads a PDF, Word or text file; it is stored and recorded as a `PENDING` document with a `QUEUED` processing job in one transaction, answered with 202; an unknown knowledge base is refused before the file is read; 30 uploads per user per hour [TASK-04.05].
 - 2026-11-27 — Document intake service: the same file is stored only once per knowledge base (409 `DOCUMENT_DUPLICATE` with the existing document's id, checked before anything is written); two identical uploads at the same moment produce exactly one document; a failed, raced or cancelled upload never leaves a file behind; a knowledge base cannot be deleted halfway through an insert [TASK-04.04].
 - 2026-11-27 — Upload intake: files are received as a stream with the size limit enforced while they arrive (oversized uploads are refused without being read), the real type is detected from the bytes (PDF, Word .docx, UTF-8 text and Markdown; macro-enabled, encrypted and zip-bomb archives refused), and display filenames are sanitized; new error codes `INVALID_UPLOAD`, `FILE_TOO_LARGE`, `UNSUPPORTED_FILE_TYPE` (with a reason), `FILE_EMPTY` [TASK-04.03].
 - 2026-11-27 — Knowledge bases API: create (ADMIN), list and get with document statistics (members), partial update with a notice when chunking changes, soft delete (202) that frees the name at once; names unique per organization ignoring case, also under concurrent requests; every route covered by the tenant-isolation framework [TASK-04.02].
