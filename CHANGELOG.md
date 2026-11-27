@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-27 — Security model document (`docs/architecture/security-model.md`): assets, trust boundaries, STRIDE threat table, authentication and session lifecycle, tenancy, roles, rate limits, logging and secrets, and the known gaps with the task that closes each [TASK-03.09].
 - 2026-11-27 — Tenant-isolation test framework: every API route must be classified; each organization-scoped route is probed from another organization (owner, admin and member) and must answer exactly like a non-existent organization while changing nothing in the database; a new route without a case fails the build [TASK-03.08].
 - 2026-11-27 — Rate limiting on login (10/min per IP, 5/min per account) and registration (5/hour per IP): Redis sliding window checked atomically, 429 with `Retry-After`, fails closed (503) if Redis is down, no raw IPs or emails stored or logged; `CORTEX_RATE_LIMIT__*` settings, and staging/production refuse to start with limiting disabled [TASK-03.07].
 - 2026-11-27 — Organization and member management API: list/create/get/rename organizations; list/add/re-role/remove members with owner/admin rules; an organization can never lose its last owner, even under concurrent changes [TASK-03.06].

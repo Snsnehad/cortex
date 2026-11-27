@@ -119,7 +119,7 @@ api (routes)  →  services  →  repositories  →  database
 
 ## 6. Multi-tenancy & security model (summary)
 
-Full document will live in `docs/architecture/security-model.md` (TASK-03.09).
+Full document: [docs/architecture/security-model.md](docs/architecture/security-model.md) (threat model, token lifecycle, tenancy, RBAC, known gaps).
 
 * **Tenant = organization.** Every tenant-owned row carries `organization_id` (denormalized onto documents, chunks, jobs, conversations, usage events) so every query and every vector search can filter on it directly.
 * **Org context is never trusted from the client.** Routes are shaped `/api/v1/orgs/{org_id}/...`; the `org_id` in the path is only a *claim*. The `OrgContext` dependency loads the caller's membership row for `(org_id, current_user.id)`; no membership → **404** (not 403, to avoid confirming existence). The resulting `OrgContext(org_id, user_id, role)` is the only source of `organization_id` passed to services.
@@ -127,12 +127,12 @@ Full document will live in `docs/architecture/security-model.md` (TASK-03.09).
 * **Roles**: `OWNER > ADMIN > MEMBER`, enforced by `require_role(min_role)` dependency + service-level checks. Matrix in [API_SPECIFICATION.md](API_SPECIFICATION.md#roles).
 * **Authorization before retrieval**: the retrieval service first resolves the KB ids the caller may search from PostgreSQL, and then passes them as a **mandatory Qdrant filter** (`organization_id = X AND knowledge_base_id IN [...]`). The vector index wrapper refuses to execute a search without a tenant filter (defence in depth, unit-tested).
 * **DB-level integrity**: composite foreign keys ensure a document's `organization_id` equals its knowledge base's `organization_id` (see DATABASE_DESIGN §4), so a bug cannot create a cross-tenant child row.
-* **Tenant isolation test suite** grows every phase: user B attempts every org-A endpoint → expects 404/403 and zero data.
+* **Tenant isolation test suite** (TASK-03.08) grows every phase: every API route must be classified, and the owner, admin and member of org B call every org-A endpoint → 404 identical to an unknown org, and the database is unchanged.
 
 ## 7. Authentication
 
 * Passwords: Argon2id (`pwdlib[argon2]`).
-* **Access token**: JWT (HS256, 15 min), claims `sub, iat, exp, jti, typ=access`. Sent as `Authorization: Bearer`. Held **in memory** by the SPA.
+* **Access token**: JWT (HS256, 15 min), claims `sub, iat, exp, jti, typ=access, iss, aud` (all required, algorithm pinned). Sent as `Authorization: Bearer`. Held **in memory** by the SPA.
 * **Refresh token**: opaque 256-bit random string, stored **hashed (SHA-256)** in `refresh_tokens`, 14-day expiry, **rotated on every use**; reuse of a rotated token revokes the whole token family (theft detection). Delivered to browsers as an `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` cookie. See ADR-006.
 * Logout revokes the presented refresh token's family. Access tokens are short-lived and not individually revoked (documented trade-off).
 
