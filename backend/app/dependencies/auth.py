@@ -13,6 +13,7 @@ working immediately, not when its token expires. It is a primary-key lookup.
 
 from typing import Annotated
 
+import structlog
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -54,6 +55,9 @@ async def get_current_user(
     user = await session.get(User, claims.user_id)
     if user is None or not user.is_active:
         raise InvalidTokenError
+    # Every later log line of this request (and its access-log line) carries the user id.
+    # RequestContextMiddleware removes it again when the request ends.
+    structlog.contextvars.bind_contextvars(user_id=str(user.id))
     return user
 
 

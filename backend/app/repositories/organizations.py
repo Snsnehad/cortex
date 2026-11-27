@@ -19,6 +19,19 @@ class OrganizationRepository:
     def add_membership(self, membership: OrganizationMembership) -> None:
         self._session.add(membership)
 
+    async def get_membership(
+        self, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> OrganizationMembership | None:
+        """The tenant check behind every org-scoped request: one lookup on the
+        (organization_id, user_id) unique index. Both ids are required; querying by user
+        alone would let a member of ANY organization through."""
+        return await self._session.scalar(
+            select(OrganizationMembership).where(
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.user_id == user_id,
+            )
+        )
+
     async def slug_exists(self, slug: str) -> bool:
         return bool(await self._session.scalar(select(exists().where(Organization.slug == slug))))
 

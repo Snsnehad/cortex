@@ -415,3 +415,31 @@ Security behaviour (all tested, two by mutation):
 - `CurrentUser` re-checks the database on every request: a deactivated user is locked out immediately, not when the token expires.
 - Registration is atomic and race-safe (3 concurrent identical sign-ups → one 201, two 409, nothing left behind).
 - The refresh cookie only travels to `/api/v1/auth/*` (verified with curl's cookie jar against a real server).
+
+## Organization context and roles (TASK-03.05, ADR-005)
+
+Every route under `/api/v1/orgs/{org_id}/…` takes one of these dependencies (`app/dependencies/orgs.py`):
+
+```python
+from app.dependencies.orgs import AdminContext, OrgContextDep, OwnerContext
+
+@router.get("/orgs/{org_id}/knowledge-bases")
+async def list_kbs(ctx: OrgContextDep, ...):        # any member
+    ...  # query with ctx.organization_id, never the raw path value
+
+@router.post("/orgs/{org_id}/knowledge-bases")
+async def create_kb(ctx: AdminContext, ...):        # ADMIN or OWNER
+```
+
+| Situation | Response |
+|---|---|
+| No/invalid token | 401 (checked first, so anonymous callers learn nothing about organizations) |
+| Not a member, or the organization does not exist | **404 `ORGANIZATION_NOT_FOUND`**, identical body in both cases |
+| Member, but role below the route's minimum | 403 `PERMISSION_DENIED`, `details.required_role` |
+| Malformed `org_id` | 422 |
+
+- The role is read from `organization_memberships` on **every** request. Promotions, demotions and removals apply to the very next request; roles are never in the token.
+- The path parameter **must** be named `org_id`.
+- Log lines of the request (including the access log) carry `user_id` and `organization_id`. The middleware removes them when the request ends.
+
+**Lesson from the mutation test:** a membership lookup that forgot the `organization_id` filter passed every role-matrix test (they only use the caller's own organization) and failed only the cross-tenant tests. Every new org-scoped route therefore gets an explicit "member of another org gets 404" test (enforced from TASK-03.08).

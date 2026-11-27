@@ -69,6 +69,7 @@ class RequestContextMiddleware:
                 MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
             await send(message)
 
+        keys_before = set(structlog.contextvars.get_contextvars())
         with structlog.contextvars.bound_contextvars(request_id=request_id):
             try:
                 await self.app(scope, receive, send_with_request_id)
@@ -87,6 +88,11 @@ class RequestContextMiddleware:
                 await internal_error_response()(scope, receive, send_with_request_id)
             finally:
                 self._log_access(scope, status_code, started)
+                # Dependencies bind request-scoped keys (user_id, organization_id). Remove
+                # them so they cannot leak into the next request when requests share one
+                # task (as with in-process test clients).
+                added = set(structlog.contextvars.get_contextvars()) - keys_before
+                structlog.contextvars.unbind_contextvars(*(added - {"request_id"}))
 
     def _log_access(self, scope: Scope, status_code: int, started: float) -> None:
         path: str = scope.get("path", "")
