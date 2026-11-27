@@ -5,11 +5,17 @@ Routes only translate HTTP to service calls; all rules live in ``AuthService``.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Header, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, Request, Response, status
 
 from app.api.auth_cookies import REFRESH_COOKIE_NAME, clear_refresh_cookie, set_refresh_cookie
 from app.core.errors import PermissionDeniedError
 from app.dependencies.auth import AuthServiceDep, CurrentUser
+from app.dependencies.rate_limit import (
+    RateLimitsDep,
+    limit_login_by_ip,
+    limit_register_by_ip,
+    normalize_email,
+)
 from app.dependencies.settings import SettingsDep
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -34,7 +40,12 @@ def _user_agent(request: Request) -> str | None:
     return request.headers.get("user-agent")
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=RegisterResponse)
+@router.post(
+    "/register",
+    status_code=status.HTTP_201_CREATED,
+    response_model=RegisterResponse,
+    dependencies=[Depends(limit_register_by_ip)],
+)
 async def register(
     body: RegisterRequest,
     request: Request,
@@ -58,14 +69,18 @@ async def register(
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(limit_login_by_ip)])
 async def login(
     body: LoginRequest,
     request: Request,
     response: Response,
     auth: AuthServiceDep,
     settings: SettingsDep,
+    rate_limits: RateLimitsDep,
 ) -> TokenResponse:
+    # Per-account limit (needs the body): stops a botnet spread over many IPs from
+    # guessing one account's password. Checked before the (deliberately slow) hash.
+    await rate_limits.check(rate_limits.login_email, normalize_email(body.email))
     result = await auth.login(
         email=body.email, password=body.password, user_agent=_user_agent(request)
     )

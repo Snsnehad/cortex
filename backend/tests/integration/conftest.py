@@ -130,7 +130,20 @@ def test_settings(migrated_database_url: str) -> Settings:
     base = Settings()
     scratch_name = make_url(migrated_database_url).database
     return base.model_copy(
-        update={"database": base.database.model_copy(update={"name": scratch_name})}
+        update={
+            "database": base.database.model_copy(update={"name": scratch_name}),
+            # A key namespace of its own per test (no counts leak between tests or runs), and
+            # limits high enough that ordinary auth tests never hit them. Rate-limit tests
+            # set their own low limits.
+            "rate_limit": base.rate_limit.model_copy(
+                update={
+                    "key_prefix": f"cortex-test:{uuid.uuid4().hex}",
+                    "login_per_ip_per_minute": 10_000,
+                    "login_per_email_per_minute": 10_000,
+                    "register_per_ip_per_hour": 10_000,
+                }
+            ),
+        }
     )
 
 
@@ -140,6 +153,7 @@ async def api_app(test_settings: Settings, db_engine: AsyncEngine) -> AsyncItera
     application = create_app(test_settings)
     yield application
     await application.state.db_engine.dispose()
+    await application.state.redis.aclose()
 
 
 @pytest.fixture

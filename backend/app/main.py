@@ -12,6 +12,7 @@ Settings.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import redis.asyncio as redis
 from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
@@ -20,8 +21,10 @@ from app.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.pagination import CursorCodec
 from app.core.passwords import PasswordHasher
+from app.core.rate_limit import RateLimiter
 from app.core.tokens import AccessTokenService
 from app.database.session import create_engine, create_session_factory
+from app.dependencies.rate_limit import RateLimitGuard
 from app.middleware.request_context import RequestContextMiddleware
 
 API_V1_PREFIX = "/api/v1"
@@ -37,7 +40,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Close every pooled connection on shutdown so the database sees a clean disconnect
     # instead of connections dropped mid-session.
     await app.state.db_engine.dispose()
-    logger.info("app.shutdown", db_pool="disposed")
+    await app.state.redis.aclose()
+    logger.info("app.shutdown", db_pool="disposed", redis="closed")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -66,6 +70,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.access_tokens = AccessTokenService(
         settings.auth.jwt_secret.get_secret_value(),
         ttl_seconds=settings.auth.access_token_ttl_seconds,
+    )
+    # Shared Redis client (connects lazily). Short timeouts: a rate-limit check must fail
+    # fast when Redis is down instead of holding the request.
+    rl_timeout = settings.rate_limit.redis_timeout_seconds
+    app.state.redis = redis.Redis.from_url(
+        settings.redis.url.get_secret_value(),
+        socket_timeout=rl_timeout,
+        socket_connect_timeout=rl_timeout,
+    )
+    app.state.rate_limits = RateLimitGuard(
+        RateLimiter(app.state.redis, key_prefix=settings.rate_limit.key_prefix), settings
     )
     app.include_router(api_router, prefix=API_V1_PREFIX)
     register_exception_handlers(app)

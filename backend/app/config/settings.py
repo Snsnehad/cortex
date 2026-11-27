@@ -145,6 +145,18 @@ class RAGSettings(BaseModel):
         return self
 
 
+class RateLimitSettings(BaseModel):
+    # Staging/production refuse to start with rate limiting disabled.
+    enabled: bool = True
+    # Redis key namespace; tests use a unique prefix per test for isolation.
+    key_prefix: str = Field(default="cortex:rl", pattern=r"^[a-z0-9:_-]+$")
+    login_per_ip_per_minute: int = Field(default=10, ge=1)
+    login_per_email_per_minute: int = Field(default=5, ge=1)
+    register_per_ip_per_hour: int = Field(default=5, ge=1)
+    # How long a rate-limit check may wait for Redis before giving up.
+    redis_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
@@ -171,6 +183,7 @@ class Settings(BaseSettings):
     embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
     @model_validator(mode="before")
     @classmethod
@@ -211,6 +224,8 @@ class Settings(BaseSettings):
             problems.append("storage.backend must be 's3'")
         if not self.auth.refresh_cookie_secure:
             problems.append("auth.refresh_cookie_secure must be true")
+        if not self.rate_limit.enabled:
+            problems.append("rate_limit.enabled must be true")
 
         if problems:
             raise ValueError(

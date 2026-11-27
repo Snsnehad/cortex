@@ -459,3 +459,21 @@ Routes: `app/api/v1/organizations.py`. Rules: `app/services/organizations.py`. C
 - `OrgContext` now lives in `app/core/tenancy.py`, so services can use it without importing the web layer (this also broke an import cycle). `app.dependencies.orgs` re-exports it.
 - Organization creation (unique slugs) is shared by registration and `POST /orgs` via `OrganizationService.add_with_owner`.
 - Removing a member cascades to their private conversations in that organization (ADR-020, confirmed final 2026-11-27).
+
+## Rate limiting (TASK-03.07, ADR-011)
+
+Limiter: `app/core/rate_limit.py`. Route dependencies: `app/dependencies/rate_limit.py`. Settings: `CORTEX_RATE_LIMIT__*` (see `.env.example`).
+
+| Endpoint | Policy | Identity |
+|---|---|---|
+| `POST /auth/login` | `login_ip`: 10 / min | client IP |
+| `POST /auth/login` | `login_email`: 5 / min | email, trimmed and lower-cased |
+| `POST /auth/register` | `register_ip`: 5 / hour | client IP |
+
+- **Atomic**: one Lua script trims, counts and records. Never split it into separate Redis calls: concurrent requests would then all see "under the limit" (the concurrency test catches this).
+- **Rejections are not recorded**, so a client that keeps retrying is not locked out forever. `Retry-After` (seconds, rounded up) is when the oldest counted request leaves the window.
+- **Privacy**: keys are `{key_prefix}:{policy}:{sha256(identity)}`; logs (`rate_limit.exceeded`) carry only `identity_ref`, the first 12 hex characters of that hash.
+- **Redis down**: `guard.check(...)` fails closed by default (503 `RATE_LIMIT_UNAVAILABLE`, logged as `rate_limit.unavailable`). Pass `fail_closed=False` for limits where availability matters more than protection.
+- **Adding a limit**: add a `RateLimitPolicy` to `RateLimitGuard`, a setting for its limit, and either a route dependency (identity known from the request) or a `guard.check(...)` call in the route (identity from the body).
+- **Client IP** is the TCP peer. Behind a load balancer this must come from trusted proxy configuration (Phase 16); never read `X-Forwarded-For` directly, as clients can forge it.
+- **Tests**: `test_settings` gives every test its own key prefix and very high limits, so ordinary tests never hit 429. Rate-limit tests set low limits through `limited_settings(...)` in `tests/integration/test_rate_limit.py`.

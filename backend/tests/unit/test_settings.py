@@ -146,6 +146,7 @@ def test_deployed_environment_accepts_safe_configuration(environment: str) -> No
             "refresh_cookie_secure",
             id="insecure-cookie",
         ),
+        pytest.param({"rate_limit": {"enabled": False}}, "rate_limit.enabled", id="rate-limit-off"),
     ],
 )
 def test_production_refuses_unsafe_configuration(

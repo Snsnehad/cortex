@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-27 — Rate limiting on login (10/min per IP, 5/min per account) and registration (5/hour per IP): Redis sliding window checked atomically, 429 with `Retry-After`, fails closed (503) if Redis is down, no raw IPs or emails stored or logged; `CORTEX_RATE_LIMIT__*` settings, and staging/production refuse to start with limiting disabled [TASK-03.07].
 - 2026-11-27 — Organization and member management API: list/create/get/rename organizations; list/add/re-role/remove members with owner/admin rules; an organization can never lose its last owner, even under concurrent changes [TASK-03.06].
 - 2026-11-27 — Organization context for `/orgs/{org_id}/…` routes: membership verified per request (non-members and unknown orgs get an identical 404), `require_role` / `AdminContext` / `OwnerContext` (403), role changes effective immediately, user and org ids in request logs [TASK-03.05].
 - 2026-11-27 — Auth API: register (user + organization + OWNER, atomic and race-safe), login (enumeration-resistant), refresh (CSRF header + rotation), logout, `GET/PATCH /auth/me`, change password (ends other sessions); `CurrentUser` dependency with Swagger "Authorize" support [TASK-03.04].
