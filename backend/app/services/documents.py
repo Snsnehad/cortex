@@ -24,8 +24,9 @@ deletes the object too; that cleanup is shielded from cancellation. If even the 
 fails, the key is logged (``document.cleanup_failed``) for the Phase 5 reconciler.
 """
 
+import hashlib
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from typing import IO
 
@@ -33,12 +34,14 @@ from anyio import CancelScope, to_thread
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, NotFoundError
 from app.core.logging import get_logger
+from app.core.pagination import CursorCodec, PageResult
 from app.core.tenancy import OrgContext
 from app.models import Document, DocumentStatus, JobStatus, JobType, ProcessingJob
 from app.repositories.documents import DocumentRepository
 from app.repositories.knowledge_bases import KnowledgeBaseRepository
+from app.repositories.pagination import KeysetOrder, PageRequest, fetch_page
 from app.services.knowledge_bases import KnowledgeBaseNotFoundError
 from app.storage import StorageBackend, document_key
 from app.uploads import DetectedType, ReceivedFile
@@ -63,6 +66,29 @@ class DocumentDuplicateError(ConflictError):
 class AddedDocument:
     document: Document
     job: ProcessingJob
+
+
+class DocumentNotFoundError(NotFoundError):
+    default_code = "DOCUMENT_NOT_FOUND"
+    default_message = "Document not found."
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentWithJob:
+    document: Document
+    job: ProcessingJob | None  # the latest job; None only for data created outside the API
+
+
+@dataclass(frozen=True, slots=True)
+class Download:
+    """Either a redirect to a direct (presigned) URL, or a stream the API serves itself."""
+
+    document: Document
+    redirect_url: str | None = None
+    chunks: AsyncGenerator[bytes] | None = None
+
+
+NEWEST_FIRST = KeysetOrder(Document.created_at, Document.id, descending=True)
 
 
 class StoredContentMismatchError(RuntimeError):
@@ -209,3 +235,83 @@ class DocumentService:
             # The object may be left behind (or may never have been written); the Phase 5
             # reconciler removes objects that no document row refers to.
             logger.warning("document.cleanup_failed", storage_key=key)
+
+    # --- reads (TASK-04.06) ---------------------------------------------------------------
+
+    async def list_in_kb(
+        self,
+        ctx: OrgContext,
+        knowledge_base_id: uuid.UUID,
+        *,
+        status: DocumentStatus | None,
+        filename_contains: str | None,
+        page: PageRequest,
+        codec: CursorCodec,
+    ) -> PageResult[Document]:
+        if await self._knowledge_bases.get_active(ctx.organization_id, knowledge_base_id) is None:
+            raise KnowledgeBaseNotFoundError
+        # The cursor is bound to the filters. Cursors are readable (base64), so the search
+        # text enters the scope only as a hash.
+        q_ref = (
+            hashlib.sha256(filename_contains.encode()).hexdigest()[:16] if filename_contains else ""
+        )
+        return await fetch_page(
+            self._session,
+            DocumentRepository.visible_in_kb_query(
+                ctx.organization_id,
+                knowledge_base_id,
+                status=status,
+                filename_contains=filename_contains,
+            ),
+            NEWEST_FIRST,
+            page=page,
+            scope=f"docs:kb={knowledge_base_id}:status={status or ''}:q={q_ref}:created:desc",
+            codec=codec,
+        )
+
+    async def get(self, ctx: OrgContext, document_id: uuid.UUID) -> DocumentWithJob:
+        document = await self._get_visible(ctx, document_id)
+        job = await self._documents.latest_job(ctx.organization_id, document_id)
+        return DocumentWithJob(document, job)
+
+    async def download(
+        self, ctx: OrgContext, document_id: uuid.UUID, *, link_ttl_seconds: int
+    ) -> Download:
+        document = await self._get_visible(ctx, document_id)
+        # End the read transaction before talking to storage (see require_knowledge_base).
+        await self._session.commit()
+        url = await self._storage.presigned_get_url(
+            document.storage_key, filename=document.filename, expires_in_seconds=link_ttl_seconds
+        )
+        if url is not None:
+            return Download(document, redirect_url=url)
+        return Download(
+            document, chunks=await _started(self._storage.iter_chunks(document.storage_key))
+        )
+
+    async def _get_visible(self, ctx: OrgContext, document_id: uuid.UUID) -> Document:
+        document = await self._documents.get_visible(ctx.organization_id, document_id)
+        if document is None:
+            raise DocumentNotFoundError
+        return document
+
+
+async def _started(chunks: AsyncGenerator[bytes]) -> AsyncGenerator[bytes]:
+    """Pull the first chunk now, so a missing object fails *before* the response starts
+    (afterwards the client would only see a truncated download)."""
+    try:
+        first = await anext(chunks, None)
+    except BaseException:
+        await chunks.aclose()
+        raise
+
+    async def stream() -> AsyncGenerator[bytes]:
+        try:
+            if first is not None:
+                yield first
+            async for chunk in chunks:
+                yield chunk
+        finally:
+            await chunks.aclose()
+
+    return stream()

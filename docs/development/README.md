@@ -555,3 +555,9 @@ curl.exe -X POST "http://127.0.0.1:8000/api/v1/orgs/<org_id>/knowledge-bases/<kb
 - Storage comes from `StorageDep` (`app.state.storage`, built by `create_storage` at startup; it touches no disk or network until used, and `aclose()` runs on shutdown).
 - The job stays `QUEUED` until the Phase 5 worker exists; nothing processes it yet.
 - In tests, `test_settings` stores files under the test's `tmp_path`, never in the repository.
+
+## Reading documents (TASK-04.06)
+
+- **Visible** documents only: `DocumentRepository.get_visible(org_id, document_id)` / `visible_in_kb_query(...)` exclude `DELETING` documents and (via a join) documents of deleted knowledge bases. Never load a document by id alone in request code.
+- Filename search: `escape_like()` makes `%`, `_` and `\` literal; use `ilike(pattern, escape=LIKE_ESCAPE)`. Put only a hash of free-text filters into a cursor scope (cursors are readable base64).
+- Downloads: `DocumentService.download` returns either a presigned `redirect_url` (S3) or a stream whose first chunk is already read, so storage errors surface before the response headers are sent. Streamed responses always carry `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`.

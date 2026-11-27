@@ -91,8 +91,9 @@ stateDiagram-v2
 3. **Child resources are looked up by `(organization_id, id)`.** For example, a member of org A addressed through org B's path gets 404 `MEMBER_NOT_FOUND`, identical to an unknown id.
 4. **Database-level integrity:** composite foreign keys make cross-tenant rows impossible even if the code has a bug. For example, a document must belong to a knowledge base of the *same* organization, and a chunk to the same document, knowledge base and organization ([DATABASE_DESIGN.md](../../DATABASE_DESIGN.md) §4, tested in `test_document_models.py`).
 5. **The isolation test framework** ([backend/tests/integration/tenancy.py](../../backend/tests/integration/tenancy.py), [test_tenant_isolation.py](../../backend/tests/integration/test_tenant_isolation.py)) classifies every API route. Every org-scoped route is probed by another organization's owner, admin and member, and must answer exactly like an unknown organization while changing nothing in the database. A route without a case fails the build. Proven by mutation (TASK-03.08).
-6. **Pagination cursors** are HMAC-signed and bound to one listing; tenant isolation never depends on them.
-7. **Planned (Phase 8):** vector search always carries a mandatory `organization_id` + allowed knowledge-base filter, and the Qdrant wrapper refuses unfiltered searches.
+6. **Pagination cursors** are HMAC-signed and bound to one listing (and its filters; free-text search only as a hash); tenant isolation never depends on them.
+7. **Downloads** are always attachments: presigned S3 links force `Content-Disposition: attachment`; local streams add `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. An uploaded HTML/SVG file can never render in a browser (TASK-04.06).
+8. **Planned (Phase 8):** vector search always carries a mandatory `organization_id` + allowed knowledge-base filter, and the Qdrant wrapper refuses unfiltered searches.
 
 ## 6. Roles (RBAC)
 

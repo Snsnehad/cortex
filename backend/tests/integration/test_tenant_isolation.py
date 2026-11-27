@@ -43,8 +43,8 @@ cases = pytest.mark.parametrize("case", ISOLATION_CASES, ids=lambda c: c.id)
 
 
 @pytest.fixture
-async def world(session_factory: Factory) -> World:
-    return await build_world(session_factory)
+async def world(session_factory: Factory, api_app: FastAPI) -> World:
+    return await build_world(session_factory, api_app.state.storage)
 
 
 async def send(

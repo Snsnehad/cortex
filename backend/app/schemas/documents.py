@@ -9,7 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.models import Document, DocumentStatus, JobStage, JobStatus, JobType, ProcessingJob
-from app.services.documents import AddedDocument
+from app.services.documents import AddedDocument, DocumentWithJob
 
 
 class DocumentOut(BaseModel):
@@ -86,4 +86,41 @@ class DocumentAccepted(BaseModel):
     def from_domain(cls, added: AddedDocument) -> "DocumentAccepted":
         return cls(
             document=DocumentOut.from_model(added.document), job=JobOut.from_model(added.job)
+        )
+
+
+class DocumentDetail(DocumentOut):
+    latest_job: JobOut | None
+
+    @classmethod
+    def from_domain(cls, item: DocumentWithJob) -> "DocumentDetail":
+        base = DocumentOut.from_model(item.document)
+        latest = JobOut.from_model(item.job) if item.job else None
+        return cls(**base.model_dump(), latest_job=latest)
+
+
+class DocumentStatusOut(BaseModel):
+    """Lightweight poll while a document is processed."""
+
+    document_id: uuid.UUID
+    status: DocumentStatus
+    job_status: JobStatus | None
+    stage: JobStage | None
+    attempts: int
+    max_attempts: int | None
+    error_code: str | None
+    updated_at: datetime
+
+    @classmethod
+    def from_domain(cls, item: DocumentWithJob) -> "DocumentStatusOut":
+        document, job = item.document, item.job
+        return cls(
+            document_id=document.id,
+            status=document.status,
+            job_status=job.status if job else None,
+            stage=job.stage if job else None,
+            attempts=job.attempts if job else 0,
+            max_attempts=job.max_attempts if job else None,
+            error_code=document.error_code or (job.error_code if job else None),
+            updated_at=max(document.updated_at, job.updated_at) if job else document.updated_at,
         )

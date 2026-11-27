@@ -28,9 +28,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.base import Base
 from app.models import Organization, OrgRole, User
+from app.storage import StorageBackend
+from tests.integration.db_helpers import add_all_and_commit, new_document
 from tests.integration.factories import add_member, create_kb, create_org, create_user
 
 Factory = async_sessionmaker[AsyncSession]
+TENANT_A_FILE = b"Tenant A confidential handbook"
 ORG_PREFIX = "/api/v1/orgs/{org_id}"
 
 
@@ -45,7 +48,7 @@ class World:
     resources_a: dict[str, str]
 
 
-async def build_world(factory: Factory) -> World:
+async def build_world(factory: Factory, storage: StorageBackend) -> World:
     users: dict[str, User] = {}
     orgs: dict[str, Organization] = {}
     for tenant in ("a", "b"):
@@ -58,11 +61,19 @@ async def build_world(factory: Factory) -> World:
             users[f"{role.value.lower()}_{tenant}"] = user
     users["outsider"] = await create_user(factory)
     kb_a = await create_kb(factory, orgs["a"], name="Tenant A handbook")
+    # A document of A whose file really exists, so the download positive control can work.
+    doc_a = new_document(kb_a, content=TENANT_A_FILE.decode())
+    await add_all_and_commit(factory, doc_a)
+    await storage.put(doc_a.storage_key, TENANT_A_FILE, content_type=doc_a.mime_type)
     return World(
         org_a=orgs["a"],
         org_b=orgs["b"],
         users=users,
-        resources_a={"user_id": str(users["member_a"].id), "kb_id": str(kb_a.id)},
+        resources_a={
+            "user_id": str(users["member_a"].id),
+            "kb_id": str(kb_a.id),
+            "document_id": str(doc_a.id),
+        },
     )
 
 
@@ -132,6 +143,19 @@ ISOLATION_CASES: list[IsolationCase] = [
         files=lambda w: {"file": ("intruder.txt", b"planted by another tenant", "text/plain")},
         ok_status=202,
         resource_params=("kb_id",),
+    ),
+    # --- document reads (TASK-04.06) ---
+    IsolationCase(
+        "GET", f"{ORG_PREFIX}/knowledge-bases/{{kb_id}}/documents", resource_params=("kb_id",)
+    ),
+    IsolationCase(
+        "GET", f"{ORG_PREFIX}/documents/{{document_id}}", resource_params=("document_id",)
+    ),
+    IsolationCase(
+        "GET", f"{ORG_PREFIX}/documents/{{document_id}}/status", resource_params=("document_id",)
+    ),
+    IsolationCase(
+        "GET", f"{ORG_PREFIX}/documents/{{document_id}}/download", resource_params=("document_id",)
     ),
 ]
 
