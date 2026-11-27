@@ -376,3 +376,23 @@ claims = tokens.verify(bearer_token)       # AccessTokenClaims(user_id, token_id
 - Tokens carry **only the user id**. JWTs are signed, not encrypted: anyone holding one can read it.
 - Roles are **not** in the token. Permissions are checked per request against `organization_memberships`, so a role change or removal applies immediately rather than after up to 15 minutes.
 - Access tokens are not revocable individually (ADR-006). Logout revokes the refresh-token family; an already-issued access token stays valid until it expires (≤ 15 min).
+
+## Refresh tokens and sessions (TASK-03.03, ADR-006, ADR-022)
+
+| Piece | Where |
+|---|---|
+| Token generation (256-bit, URL-safe) and SHA-256 hashing | `app/core/refresh_tokens.py` |
+| Cookie set/clear (`cortex_refresh`; HttpOnly, SameSite=Strict, Path=/api/v1/auth, Secure per settings) | `app/api/auth_cookies.py` |
+| Row locking, family revocation | `app/repositories/refresh_tokens.py` |
+| `SessionService.start / rotate / end / end_all_for_user` | `app/services/sessions.py` |
+
+**Lifecycle**
+1. Login → `start(user_id)` creates a new **family** with one token. Only its SHA-256 is stored.
+2. Refresh → `rotate(token)` locks the row (`FOR UPDATE`); the token is marked replaced and a new one is issued in the same family (sliding `refresh_token_ttl_days`).
+3. **Reuse** (a replaced or revoked token comes back) → the whole family is revoked, **committed before** the 401, and logged as `auth.refresh_token_reuse_detected`. The response is identical to "unknown token".
+4. Logout → `end(token)` revokes the family (idempotent). Password change → `end_all_for_user(user_id, keep_family=current)`.
+5. Inactive users cannot refresh; their session family is revoked.
+
+**Frontend contract:** never send two refreshes with the same token concurrently (single-flight). The second would count as reuse and sign the user out (ADR-022, by design).
+
+**Verified by mutation tests:** disabling reuse detection fails 5 tests; dropping the commit before the reuse error (the revocation would roll back silently) fails 2.

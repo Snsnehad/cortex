@@ -119,6 +119,17 @@ Newest session first. Each entry is the handoff for the next session.
 - Attack-shaped tests: tampering, foreign secret, raw secret, alg=none, correctly signed HS512, and validly signed tokens with one wrong claim each (built with the private key on purpose, plus a guard test that the base payload is valid). Mutation: disabling the typ check lets a refresh-typed token in; test fails as intended.
 - My test bugs: hand-built JWT segment serialised datetimes (fixed: epoch ints); PyJWT's HS512 short-key warning is expected in the forgery test (suppressed there only).
 
-**Exact next task:** **TASK-03.03**: refresh tokens. `app/core/refresh_tokens.py` (opaque 256-bit token via secrets.token_urlsafe(32), SHA-256 hex for storage, never the raw value) + `app/repositories/refresh_tokens.py` + `app/services/sessions.py`: issue (new family), rotate (lock the row FOR UPDATE; valid → revoke + replaced_by → new token in same family; already replaced/revoked → REUSE: revoke whole family, log security event, 401), revoke family (logout), expiry. Cookie attributes helper (HttpOnly; Secure per settings; SameSite=Strict; Path=/api/v1/auth; Max-Age). Integration tests: rotation chain, reuse of an old token revokes the newest, expired token rejected, concurrent double-use of the same token → exactly one succeeds.
+- TASK-03.02 CI on main: run 45828110749 SUCCESS (338 passed, seed 1709187362).
+
+## Session 2 — 2026-11-27
+
+**Phase:** PHASE-03 (Auth & multi-tenancy).
+
+- Repo check at start: working tree clean; "changed on disk" notices were stale (branch switches), nothing pending from the user.
+- **TASK-03.03 COMPLETED**: refresh-token primitives (`app/core/refresh_tokens.py`), cookie helper (`app/api/auth_cookies.py`), `RefreshTokenRepository` (FOR UPDATE lookup, family revocation), `SessionService` (start / rotate / end / end_all_for_user). ADR-022: strict reuse detection, no grace period (SPA must single-flight refreshes). 357 tests passed; refresh tests green under 3 random seeds.
+- Proofs: reuse revokes the newest token (checked from a fresh session); concurrent double use → exactly one success, then the family is revoked; other devices unaffected. Mutations: no reuse detection → 5 tests fail; removing the commit before the reuse error → 2 fail (the revocation would silently roll back).
+- My test bug: the reuse-log test depended on another test having configured JSON logging (random order would make it flaky); it now configures logging itself.
+
+**Exact next task:** **TASK-03.04**: auth endpoints in `app/api/v1/auth.py` + `app/services/auth.py` + schemas: `POST /auth/register` (validate_password; user + organization (slug from name, unique) + OWNER membership in ONE transaction; 409 EMAIL_TAKEN via the unique index, race-safe), `POST /auth/login` (generic INVALID_CREDENTIALS; dummy_verify for unknown email; inactive → same generic error; rehash on login; set last_login_at; start session; set cookie), `POST /auth/refresh` (requires header `X-Requested-With: cortex`, rotate, new access token + cookie), `POST /auth/logout` (204, end session, clear cookie), `GET /auth/me`, `PATCH /auth/me`, `POST /auth/me/password` (verify current, validate new, end other sessions). Needs a minimal `get_current_user` dependency (Bearer → AccessTokenService → active user) — fuller OrgContext comes in 03.05. Rate limiting is 03.07. Integration tests through `api_client`.
 
 **How to resume:** say "Resume Cortex development". The assistant reads PROJECT_PLAN, TASK_TRACKER, this log and DECISIONS, checks the repo state, then continues from the next task.

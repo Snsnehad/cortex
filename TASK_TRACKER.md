@@ -12,7 +12,7 @@
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
 | PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
-| PHASE-03 | Auth & multi-tenancy | IN_PROGRESS | 2 / 9 |
+| PHASE-03 | Auth & multi-tenancy | IN_PROGRESS | 3 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
 | PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-03.03 — rotating refresh tokens: generation, SHA-256 storage, rotation, reuse detection → family revoke, cookie settings.
-**Next task:** TASK-03.04 (auth endpoints).
+**Current task:** TASK-03.04 — auth endpoints: register, login, refresh, logout, me, update me, change password.
+**Next task:** TASK-03.05 (current user, OrgContext, require_role).
 
 ## Known blockers
 
@@ -91,7 +91,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 |---|---|---|---|---|---|---|---|
 | TASK-03.01 | Password hashing + policy | COMPLETED | 02.08 | app/core/passwords.py, backend/pyproject.toml (pwdlib[argon2] 0.4.2, argon2-cffi 25.1.0), DECISIONS.md (ADR-021), docs/development/README.md | tests/unit/test_passwords.py (27) | ruff · mypy · pytest 308 passed · Argon2id m=19 MiB t=2 p=1 (hash format asserted) · salted · rehash-on-login when parameters change (and never on a wrong password) · NFKC: fullwidth and combining forms verify · corrupt/foreign hashes → invalid, no crash · dummy_verify within 0.5–2× of a real verify · async hashing keeps the event loop responsive · NIST-style policy incl. boundaries 12/128 · measured ≈53 ms per hash (default ≈116 ms) | Breached-password check (HIBP) noted as a possible enhancement. Fixed in passing: invisible/look-alike Unicode in test source now written as \u escapes |
 | TASK-03.02 | JWT access tokens | COMPLETED | 01.03 | app/core/tokens.py (AccessTokenService, TokenExpiredError, InvalidTokenError), app/main.py (app.state.access_tokens), backend/pyproject.toml (pyjwt 2.15.1), docs/development/README.md | tests/unit/test_access_tokens.py (30) | ruff · mypy · pytest 338 passed · round trip; payload has only sub + protocol claims; unique jti · expired → TOKEN_EXPIRED; 10 s skew tolerated; future iat rejected · tampered payload/signature, other secret, raw (underived) secret, alg=none, correctly signed HS512 → INVALID_TOKEN · wrong typ/aud/iss, non-UUID sub, missing jti/typ/aud/exp → INVALID_TOKEN · mutation: disabling the typ check lets a typ=refresh token through (test fails); restored byte-identical | Dedicated derived signing key. Roles intentionally not in the token (checked per request) |
-| TASK-03.03 | Rotating refresh tokens + reuse detection | NOT_STARTED | 02.03, 03.02 | | | | |
+| TASK-03.03 | Rotating refresh tokens + reuse detection | COMPLETED | 02.03, 03.02 | app/core/refresh_tokens.py, app/api/auth_cookies.py, app/repositories/refresh_tokens.py, app/services/sessions.py, DECISIONS.md (ADR-022), docs/development/README.md | tests/unit/test_refresh_token_primitives.py (6), tests/integration/test_refresh_sessions.py (13) | ruff · mypy · pytest 357 passed · only SHA-256 stored; user agent truncated · rotation within family, chain leaves 1 active · unknown → INVALID_REFRESH_TOKEN, expired → REFRESH_TOKEN_EXPIRED, inactive user → refused + family revoked · reuse revokes the newest token too (checked from a fresh session), other device unaffected, logged without tokens · concurrent double use: exactly 1 succeeds, then family revoked · logout idempotent · cookie attributes asserted · 3 random seeds green · mutations: no reuse detection → 5 fail; no commit before reuse error → 2 fail | My test bug: log assertion relied on an earlier test configuring JSON logging (order-dependent); now configures it itself |
 | TASK-03.04 | Auth endpoints | NOT_STARTED | 03.01–03.03 | | | | |
 | TASK-03.05 | Current user, OrgContext, require_role | NOT_STARTED | 03.04 | | | | |
 | TASK-03.06 | Org + member management | NOT_STARTED | 03.05 | | | | |

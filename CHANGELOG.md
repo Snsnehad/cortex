@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- 2026-11-27 — Refresh-token sessions: opaque 256-bit tokens stored as SHA-256, rotation on every use, strict reuse detection that revokes the whole session family, logout and "sign out everywhere", hardened refresh cookie [TASK-03.03].
 - 2026-11-26 — JWT access tokens: HS256 pinned, all claims required (`typ`, `iss`, `aud`, `jti` …), dedicated derived key, user id only, `TOKEN_EXPIRED` vs `INVALID_TOKEN` (401) [TASK-03.02].
 - 2026-11-26 — Password hashing with Argon2id (OWASP parameters, transparent rehash on login, NFKC normalisation, constant-time dummy verify, off-event-loop async API) and a NIST-style password policy [TASK-03.01].
 - 2026-11-26 — Test harness: random test order on every run (pytest-randomly), integration tests auto-marked by folder, persisted factories, an `api_client` on the migrated scratch database, faster isolation (integration suite ~43 s → ~28 s), and docs/testing/README.md [TASK-02.08].
