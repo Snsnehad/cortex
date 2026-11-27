@@ -5,6 +5,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Fixed
+- 2026-11-27 — The local-storage symlink-escape test had silently become a skip on Linux CI after storage folders became lazy; it runs again, and may now skip only on Windows [TASK-04.05 follow-up].
 - 2026-11-27 — Local storage no longer creates folders when the app starts (it would fail on a read-only container filesystem); folders are created on the first upload [TASK-04.05].
 - 2026-11-27 — Local storage: temporary files now live in `<root>/.tmp/`, so real document paths stay under Windows' 260-character limit [TASK-04.04].
 

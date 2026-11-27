@@ -9,6 +9,7 @@ error mapping for S3.
 import hashlib
 import os
 import socket
+import sys
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -307,10 +308,15 @@ async def test_local_refuses_a_symlink_that_leads_out_of_the_root(
 ) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
+    local_storage.root.mkdir(parents=True)  # the backend creates it lazily (TASK-04.05)
     link = local_storage.root / "orgs"
     try:
         link.symlink_to(outside, target_is_directory=True)
-    except OSError:  # Windows without Developer Mode cannot create symlinks
+    except OSError:
+        # Only Windows without Developer Mode may skip. Anywhere else (CI runs Linux) a
+        # failure here is a broken test, and must not silently turn into a skip again.
+        if sys.platform != "win32":
+            raise
         pytest.skip("symlinks are not available on this machine")
 
     with pytest.raises(InvalidStorageKeyError, match="escapes"):
