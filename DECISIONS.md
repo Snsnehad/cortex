@@ -125,10 +125,10 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Consequences**: Clean logs during incidents and one event-loop implementation everywhere. We give up uvloop's raw loop throughput, which matters little because latency is dominated by PostgreSQL, embedding and LLM calls. Revisit with Phase 14 load-test numbers (`uvicorn[standard]` still installs uvloop, so switching back is a one-flag change).
 
 ### ADR-020 — Conversation ownership is tied to organization membership
-* **Status**: Accepted (2026-11-26, TASK-02.05), **open to your veto**
+* **Status**: Accepted (2026-11-26, TASK-02.05); **confirmed final by the project owner on 2026-11-27** (keep deleting a removed member's conversations)
 * **Context**: The design referenced `users` from `conversations.user_id`. That allows a conversation in an organization whose owner is not (or no longer) a member, so tenant access would rely only on application checks. Conversations are private to their creator.
 * **Decision**: Composite FK `conversations (organization_id, user_id)` → `organization_memberships (organization_id, user_id)` ON DELETE CASCADE.
-* **Consequences**: The database refuses non-member ownership. **Removing a member deletes their conversations in that organization.** Nobody else could read them, so this is data minimisation rather than loss of shared data. Alternatives, if preferred: `ON DELETE RESTRICT` (the service must handle conversations before removing a member), or a soft "archived" state. Either is a small migration change.
+* **Consequences**: The database refuses non-member ownership. **Removing a member deletes their conversations in that organization.** Nobody else could read them, so this is data minimisation rather than loss of shared data. Alternatives considered and rejected: `ON DELETE RESTRICT` (removal blocked until the conversations are handled) and a soft "archived" state. Covered by `test_removing_a_member_deletes_their_conversations_adr_020`.
 
 ### ADR-021 — Argon2id parameters and password policy
 * **Status**: Accepted (2026-11-26, TASK-03.01)

@@ -458,4 +458,4 @@ Routes: `app/api/v1/organizations.py`. Rules: `app/services/organizations.py`. C
 - An organization always keeps at least one OWNER (`LAST_OWNER`).
 - `OrgContext` now lives in `app/core/tenancy.py`, so services can use it without importing the web layer (this also broke an import cycle). `app.dependencies.orgs` re-exports it.
 - Organization creation (unique slugs) is shared by registration and `POST /orgs` via `OrganizationService.add_with_owner`.
-- Removing a member cascades to their private conversations in that organization (ADR-020, still open to change).
+- Removing a member cascades to their private conversations in that organization (ADR-020, confirmed final 2026-11-27).
