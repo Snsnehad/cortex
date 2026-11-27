@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.base import Base
 from app.models import Organization, OrgRole, User
-from tests.integration.factories import add_member, create_org, create_user
+from tests.integration.factories import add_member, create_kb, create_org, create_user
 
 Factory = async_sessionmaker[AsyncSession]
 ORG_PREFIX = "/api/v1/orgs/{org_id}"
@@ -57,11 +57,12 @@ async def build_world(factory: Factory) -> World:
             await add_member(factory, orgs[tenant], user, role)
             users[f"{role.value.lower()}_{tenant}"] = user
     users["outsider"] = await create_user(factory)
+    kb_a = await create_kb(factory, orgs["a"], name="Tenant A handbook")
     return World(
         org_a=orgs["a"],
         org_b=orgs["b"],
         users=users,
-        resources_a={"user_id": str(users["member_a"].id)},
+        resources_a={"user_id": str(users["member_a"].id), "kb_id": str(kb_a.id)},
     )
 
 
@@ -100,6 +101,27 @@ ISOLATION_CASES: list[IsolationCase] = [
         f"{ORG_PREFIX}/members/{{user_id}}",
         ok_status=204,
         resource_params=("user_id",),
+    ),
+    # --- knowledge bases (TASK-04.02) ---
+    IsolationCase(
+        "POST",
+        f"{ORG_PREFIX}/knowledge-bases",
+        body=lambda w: {"name": "Created by intruder"},
+        ok_status=201,
+    ),
+    IsolationCase("GET", f"{ORG_PREFIX}/knowledge-bases"),
+    IsolationCase("GET", f"{ORG_PREFIX}/knowledge-bases/{{kb_id}}", resource_params=("kb_id",)),
+    IsolationCase(
+        "PATCH",
+        f"{ORG_PREFIX}/knowledge-bases/{{kb_id}}",
+        body=lambda w: {"name": "Renamed by intruder", "chunk_size_tokens": 256},
+        resource_params=("kb_id",),
+    ),
+    IsolationCase(
+        "DELETE",
+        f"{ORG_PREFIX}/knowledge-bases/{{kb_id}}",
+        ok_status=202,
+        resource_params=("kb_id",),
     ),
 ]
 

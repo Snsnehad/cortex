@@ -3,7 +3,7 @@
 > Source of truth for **status**. Definitions and completion conditions live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 > A task is `COMPLETED` only when: implementation finished, relevant tests **executed and passing**, acceptance criteria met, docs updated.
 > Statuses: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `COMPLETED` · `NEEDS_REVIEW`
-> Last updated: 2026-11-27 (Session 2, after TASK-04.01)
+> Last updated: 2026-11-27 (Session 2, after TASK-04.02)
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
 | PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
 | PHASE-03 | Auth & multi-tenancy | COMPLETED | 9 / 9 |
-| PHASE-04 | Upload & storage | IN_PROGRESS | 1 / 6 |
+| PHASE-04 | Upload & storage | IN_PROGRESS | 2 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
 | PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
 | PHASE-07 | Embeddings & Qdrant | NOT_STARTED | 0 / 7 (+1 stretch) |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-04.02 — knowledge-base CRUD (service, repository, routes; soft delete, stats) with RBAC tests and isolation cases.
-**Next task:** TASK-04.03 (upload validation: streamed size limit, type detection from bytes, filename sanitization).
+**Current task:** TASK-04.03 — upload validation: streamed size limit (413 without buffering), type detection from bytes (PDF, DOCX, UTF-8 text/Markdown), filename sanitization.
+**Next task:** TASK-04.04 (streamed SHA-256 + dedup within a knowledge base).
 
 ## Known blockers
 
@@ -104,7 +104,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
 | TASK-04.01 | Storage protocol, local + S3 | COMPLETED | 01.03 | app/storage/base.py (StorageBackend protocol, StoredObject, key validation, document_key, ContentMeter, read_all, content_disposition, errors incl. 503 STORAGE_UNAVAILABLE), app/storage/local.py (LocalStorage), app/storage/s3.py (S3Storage, create_s3_client), app/storage/__init__.py (create_storage), app/config/settings.py (s3_sse, s3_kms_key_id, presigned_url_ttl_seconds), .env.example, pyproject.toml/uv.lock (boto3; dev: moto[s3,server], types-boto3[s3]), docs/development/README.md | tests/unit/test_storage.py (75: 13 contract tests × local and S3, key validation, local confinement, S3 encryption/presign/error mapping, download names) | ruff · mypy · pytest 562 passed, 1 skipped (symlink test needs Developer Mode on Windows; runs on Linux CI) · S3 tested over real HTTP against moto's server, no Docker · size + SHA-256 computed in the single streaming pass · oversized/failed upload leaves no object and keeps the previous one · local: two independent walls (key validation; resolved path inside root, tested with the first wall switched off), Windows device names refused, atomic temp-file + rename · S3: SSE on every put, nothing uploaded before the limit check, presigned GET fetched over HTTP with forced attachment, tampered URL → 403 · network/5xx/throttling → 503, AccessDenied stays a 500 · mutations, all 12 killed (limit off-by-one, no containment, no device check, no temp cleanup, write in place, S3 no limit, no SSE, not-found unmapped, 5xx not retryable, network unmapped, inline disposition, read_all not closing the stream) | Found by the tests: abandoning a stream early (over-limit read, failed upload) left the file/response open until GC; streams are now closed explicitly (`aclosing`), and the protocol returns AsyncGenerator so that is type-checked. Storage is not on app.state yet: wired by the upload endpoint (04.03–04.05), so app start does not create folders nobody uses. |
-| TASK-04.02 | KB CRUD | NOT_STARTED | 03.05, 02.04 | | | | |
+| TASK-04.02 | KB CRUD | COMPLETED | 03.05, 02.04 | app/api/v1/knowledge_bases.py, app/services/knowledge_bases.py (KnowledgeBaseService; KNOWLEDGE_BASE_NOT_FOUND / KNOWLEDGE_BASE_NAME_TAKEN), app/repositories/knowledge_bases.py (active_query, get_active by (org, id), grouped stats), app/schemas/knowledge_bases.py, app/api/v1/router.py, app/config/settings.py (EmbeddingSettings.profile), API_SPECIFICATION.md, docs/development/README.md, docs/testing/README.md | tests/integration/test_knowledge_bases_api.py (41), tests/integration/tenancy.py (+5 cases, org-A KB in the world), tests/integration/api_helpers.py (Api/team/code shared; `api` fixture moved to conftest) | ruff · mypy · pytest 616 passed, 1 skipped · create with defaults/trim/profile · chunking validation (schema and merged values) · names unique per org ignoring case, race → exactly one 201 · list newest first, paginated, members allowed · stats exclude DELETING documents, same in list and detail · listing 1 or 5 KBs runs the same number of SQL statements · partial PATCH, description clearing, chunking notice · soft delete: 202, hidden, name freed, documents kept for cleanup, concurrent deletes → 202 + 404 · 15-case role matrix · isolation: 30 cases pass · mutations, all 10 killed (read ignores org [caught only by the isolation framework], deleted shown, DELETING counted, N+1 stats, overlap = size allowed [DB CHECK still refused it, as a 500], name conflict unmapped, delete ignores org, delete twice, members may create, PATCH not partial) | Found by the isolation framework's positive controls: `Result.tuples()` is deprecated in SQLAlchemy 2.1 (warnings are errors) and made three routes 500 for the legitimate owner; fixed. Cleanup of deleted KBs is a Phase 5 job (it finds `deleted_at IS NOT NULL`). |
 | TASK-04.03 | Upload validation | NOT_STARTED | 04.01 | | | | |
 | TASK-04.04 | Hashing + dedup | NOT_STARTED | 04.03 | | | | |
 | TASK-04.05 | Upload endpoint (PENDING + QUEUED job) | NOT_STARTED | 04.02–04.04 | | | | |

@@ -77,11 +77,11 @@ All membership changes lock the organization row and re-read the actor's current
 ### Knowledge bases
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/orgs/{org_id}/knowledge-bases` | ADMIN | `{name, description?, chunk_size_tokens?, chunk_overlap_tokens?}`; embedding profile = current default. 409 on duplicate name. |
-| GET | `/orgs/{org_id}/knowledge-bases` | MEMBER | Paginated; includes document counts by status. |
-| GET | `/orgs/{org_id}/knowledge-bases/{kb_id}` | MEMBER | Detail + stats. |
-| PATCH | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | Name/description. Chunking changes apply to new/reprocessed documents only (response says so). |
-| DELETE | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | 202; soft-delete then async cleanup of documents/vectors/files. |
+| POST | `/orgs/{org_id}/knowledge-bases` | ADMIN | `{name (1–200, trimmed), description? (≤ 2000), chunk_size_tokens? (64–2048, default 512), chunk_overlap_tokens? (< size, default 64, or size − 1 if smaller)}` → 201 KB. Embedding profile = current default (e.g. `bge-small-en-v1.5__384__v1`), fixed for the KB's life. Name taken in this org (any case, among non-deleted KBs; race-safe) → 409 `KNOWLEDGE_BASE_NAME_TAKEN`. Overlap ≥ size → 422 `VALIDATION_ERROR`. |
+| GET | `/orgs/{org_id}/knowledge-bases` | MEMBER | Paginated, newest first. Each item includes `stats`. |
+| GET | `/orgs/{org_id}/knowledge-bases/{kb_id}` | MEMBER | KB + `stats: {document_count, documents_by_status{PENDING, PROCESSING, READY, FAILED}, total_bytes, chunk_count}` (documents being deleted are not counted). Unknown, deleted or another org's KB → 404 `KNOWLEDGE_BASE_NOT_FOUND`. |
+| PATCH | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | Any of `{name, description, chunk_size_tokens, chunk_overlap_tokens}`; only fields sent change; `description: null` clears it; `name: null` → 422. Response = KB + `notices[]`: a chunking change says it applies to new/reprocessed documents only. Same 409/422 rules as create. |
+| DELETE | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | **202** `{id, deleted_at}`. Soft delete: hidden from every read at once and its name is free again; documents, vectors and files are removed by a background job (Phase 5). Already deleted → 404. |
 | POST | `/orgs/{org_id}/knowledge-bases/{kb_id}/reindex` | ADMIN | Stretch: migrate KB to a new embedding profile. |
 
 ### Documents

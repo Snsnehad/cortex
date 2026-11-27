@@ -495,3 +495,13 @@ Code: `app/storage/`. Depend only on the `StorageBackend` protocol; get a backen
 - **Reading:** `iter_chunks(key)` streams. If you might stop early, close it: `async with aclosing(storage.iter_chunks(key)) as chunks:`. `read_all(storage, key, max_bytes=...)` does that for you.
 - **Errors:** `ObjectNotFoundError`; `InvalidStorageKeyError` (a bug, keys never come from users); `StorageUnavailableError` → 503 `STORAGE_UNAVAILABLE` (network, timeouts, S3 5xx/throttling). Access denied or a missing bucket is a configuration error and stays a 500.
 - **Tests** (`tests/unit/test_storage.py`) need no Docker: S3 runs against moto's server in the test process. Add a contract test once and it runs on both backends.
+
+## Knowledge bases (TASK-04.02)
+
+Routes: `app/api/v1/knowledge_bases.py`. Rules: `app/services/knowledge_bases.py`. Contract: [API_SPECIFICATION.md](../../API_SPECIFICATION.md) (Knowledge bases).
+
+- **Always** load a knowledge base with `KnowledgeBaseRepository.get_active(organization_id, kb_id)` or `active_query(organization_id)`: both filter on the organization **and** `deleted_at IS NULL`. Never `session.get(KnowledgeBase, id)` in request code.
+- Names are unique per organization, ignoring case, among non-deleted KBs; the partial unique index `uq_knowledge_bases_org_name_active` decides (race-safe) and the service maps it to 409 `KNOWLEDGE_BASE_NAME_TAKEN`.
+- `embedding_profile` comes from `settings.embeddings.profile` at creation and never changes (a different model means a reindex, ADR-008).
+- Stats (`KnowledgeBaseRepository.stats`) take a list of ids and run one grouped query; use it for pages, never call it per item. `DELETING` documents are not counted.
+- Soft delete sets `deleted_at` with one conditional UPDATE. The Phase 5 cleanup job will remove the documents, vectors and files of KBs with `deleted_at` set.

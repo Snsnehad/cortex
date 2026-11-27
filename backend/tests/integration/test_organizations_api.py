@@ -5,52 +5,19 @@ import contextlib
 import uuid
 from typing import Any
 
-import httpx
 import pytest
-from fastapi import FastAPI
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Conversation, Organization, OrganizationMembership, OrgRole, User
+from app.models import Conversation, Organization, OrganizationMembership, OrgRole
 from app.repositories.organizations import OrganizationRepository
+from tests.integration.api_helpers import Api, code, team
 from tests.integration.db_helpers import add_all_and_commit, new_kb
-from tests.integration.factories import add_member, create_org, create_user
+from tests.integration.factories import create_org, create_user
 
 pytestmark = pytest.mark.anyio
 
 Factory = async_sessionmaker[AsyncSession]
-
-
-class Api:
-    """Small helper: requests as a given user against /api/v1."""
-
-    def __init__(self, app: FastAPI, client: httpx.AsyncClient) -> None:
-        self._app, self._client = app, client
-
-    async def __call__(
-        self, user: User | None, method: str, path: str, json: dict[str, Any] | None = None
-    ) -> httpx.Response:
-        headers = {}
-        if user is not None:
-            token = self._app.state.access_tokens.issue(user.id).token
-            headers["Authorization"] = f"Bearer {token}"
-        return await self._client.request(method, f"/api/v1{path}", json=json, headers=headers)
-
-
-@pytest.fixture
-def api(api_app: FastAPI, api_client: httpx.AsyncClient) -> Api:
-    return Api(api_app, api_client)
-
-
-async def team(factory: Factory) -> dict[str, Any]:
-    """An org with one user per role, plus an outsider who owns a different org."""
-    owner = await create_user(factory)
-    org = await create_org(factory, owner=owner, name="Acme")
-    admin, member, outsider = [await create_user(factory) for _ in range(3)]
-    await add_member(factory, org, admin, OrgRole.ADMIN)
-    await add_member(factory, org, member, OrgRole.MEMBER)
-    await create_org(factory, owner=outsider)
-    return {"org": org, "owner": owner, "admin": admin, "member": member, "outsider": outsider}
 
 
 async def owners_of(factory: Factory, org: Organization) -> int:
@@ -64,11 +31,6 @@ async def owners_of(factory: Factory, org: Organization) -> int:
             )
         )
     return int(count or 0)
-
-
-def code(response: httpx.Response) -> tuple[int, str | None]:
-    error = response.json().get("error") if response.content else None
-    return response.status_code, error["code"] if error else None
 
 
 # --- organizations --------------------------------------------------------------------------------

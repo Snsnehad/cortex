@@ -38,6 +38,7 @@ import app.models  # noqa: F401  (every table on Base.metadata)
 from app.config import Settings
 from app.database.base import Base
 from app.main import create_app
+from tests.integration.api_helpers import Api
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
@@ -161,3 +162,9 @@ async def api_client(api_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=api_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+
+
+@pytest.fixture
+def api(api_app: FastAPI, api_client: httpx.AsyncClient) -> Api:
+    """Requests as a given user: ``await api(user, "GET", "/orgs")`` (see api_helpers.Api)."""
+    return Api(api_app, api_client)

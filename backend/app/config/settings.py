@@ -117,6 +117,16 @@ class EmbeddingSettings(BaseModel):
     base_url: str | None = None
     api_key: SecretStr | None = None
 
+    @property
+    def profile(self) -> str:
+        """Name of the current embedding profile, e.g. ``bge-small-en-v1.5__384__v1``.
+
+        Stored on every knowledge base when it is created and fixed afterwards: vectors made
+        with different models or dimensions must never be mixed (ADR-008).
+        """
+        model = self.model.rsplit("/", 1)[-1].lower()
+        return f"{model}__{self.dimensions}__v{self.profile_version}"
+
 
 class LLMSettings(BaseModel):
     base_url: str = "https://api.openai.com/v1"

@@ -84,6 +84,15 @@ async def test_something(api_app, api_client, session_factory):
 
 `api_client` talks to the real app (middleware, error handlers, dependencies) on the migrated scratch DB. `test_api_client_uses_the_scratch_database` proves it is not the dev DB.
 
+For requests as a particular user, use the `api` fixture and the helpers in `tests/integration/api_helpers.py`:
+
+```python
+async def test_something(api, session_factory):
+    t = await team(session_factory)            # org + owner/admin/member + an outsider
+    response = await api(t["member"], "GET", f"/orgs/{t['org'].id}/knowledge-bases")
+    assert code(response) == (200, None)
+```
+
 ## Conventions
 
 - Async tests: `@pytest.mark.anyio` (or a module-level `pytestmark`). On Windows the fixtures use the selector event loop psycopg needs (ADR-018).
