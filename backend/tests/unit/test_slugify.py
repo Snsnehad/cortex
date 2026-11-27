@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services.auth import SLUG_MAX_LENGTH, slugify
+from app.services.organizations import SLUG_MAX_LENGTH, slugify
 
 
 @pytest.mark.parametrize(

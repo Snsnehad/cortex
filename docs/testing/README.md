@@ -90,3 +90,29 @@ async def test_something(api_app, api_client, session_factory):
 - Prefer asserting **specific** outcomes: the constraint name, the error `code`, exact counts.
 - For important safety rules, prove the test has teeth: break the rule temporarily (e.g. weaken a migration), watch the test fail, restore byte-identically. Done for the tenant FKs, the active-job index, membership ownership, citation snapshots and the email index.
 - Never call real paid APIs in automated tests; fakes and mocks only (`llm` marker for manual runs).
+
+## Testing concurrency: force the interleaving (lesson from TASK-03.06)
+
+Two in-process requests started with `asyncio.gather` **do not reliably overlap at the critical point**. In TASK-03.06 the first versions of the "two owners demote each other" and "two owners leave at once" tests **passed with the organization lock removed**: the first request finished its count-then-update before the second one counted. The tests looked green and proved nothing. Mutation testing exposed it.
+
+The fix is to force the dangerous interleaving deterministically with a hook at the exact point that matters:
+
+```python
+barrier = asyncio.Barrier(2)
+original = OrganizationRepository.count_owners
+
+async def count_then_wait(self, organization_id):
+    owners = await original(self, organization_id)
+    with contextlib.suppress(TimeoutError, asyncio.BrokenBarrierError):
+        await asyncio.wait_for(barrier.wait(), timeout=1.0)   # both must have counted
+    return owners
+
+monkeypatch.setattr(OrganizationRepository, "count_owners", count_then_wait)
+```
+
+- **Without the lock**, both requests count "2 owners" and pass the barrier together: the organization ends with 0 owners and the test fails (3/3 runs).
+- **With the lock**, the second request is still waiting for the lock, the first gives up at the barrier after 1 s and finishes alone; the second then counts 1 and is refused.
+
+Likewise, a "stale role" test that demoted the actor *before* the request never exercised the stale window (the org check at the start of the request already saw the new role). The working test demotes the actor from inside the `lock` call, i.e. after the org check and before the lock.
+
+**Rule:** every concurrency test must be proven by a mutation that removes the protection it is about.

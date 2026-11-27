@@ -62,15 +62,17 @@ The "member may upload" default is a product decision recorded in DECISIONS.md (
 ### Organizations & members
 | Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/orgs` | any | Organizations the caller belongs to. |
-| POST | `/orgs` | any | Create organization (caller becomes OWNER). |
-| GET | `/orgs/{org_id}` | MEMBER | Org details. |
-| PATCH | `/orgs/{org_id}` | OWNER | Rename. |
+| GET | `/orgs` | any | The caller's organizations with their role, oldest membership first. Keyset paginated. |
+| POST | `/orgs` | any | `{name}` → 201; the caller becomes OWNER; unique slug from the name. |
+| GET | `/orgs/{org_id}` | MEMBER | `{id, name, slug, created_at, role}` (`role` = the caller's). |
+| PATCH | `/orgs/{org_id}` | OWNER | `{name}`; the slug does not change, so links stay valid. |
 | DELETE | `/orgs/{org_id}` | OWNER | Async delete (stretch — see plan). |
-| GET | `/orgs/{org_id}/members` | MEMBER | Paginated member list. |
-| POST | `/orgs/{org_id}/members` | ADMIN | `{email, role}` — adds an **existing** user. Email invitations are out of MVP scope. |
-| PATCH | `/orgs/{org_id}/members/{user_id}` | ADMIN/OWNER | `{role}`; only OWNER can grant/revoke OWNER. Last OWNER cannot be demoted → 409 `LAST_OWNER`. |
-| DELETE | `/orgs/{org_id}/members/{user_id}` | ADMIN/OWNER, or self | Remove / leave. Last OWNER cannot leave. |
+| GET | `/orgs/{org_id}/members` | MEMBER | `{user_id, email, full_name, role, joined_at}`, oldest first, keyset paginated. |
+| POST | `/orgs/{org_id}/members` | ADMIN | `{email, role=MEMBER}` adds an **existing, active** user → 201. Unknown or inactive → 404 `USER_NOT_FOUND`; already a member → 409 `ALREADY_MEMBER`; only an OWNER may add with role OWNER (403). Email invitations are out of MVP scope. |
+| PATCH | `/orgs/{org_id}/members/{user_id}` | ADMIN | `{role}`. ADMIN manages MEMBER/ADMIN; only OWNER may grant OWNER or change an owner (403 `PERMISSION_DENIED`). Demoting the last OWNER → 409 `LAST_OWNER`. Non-member target → 404 `MEMBER_NOT_FOUND`. |
+| DELETE | `/orgs/{org_id}/members/{user_id}` | ADMIN, or self | 204. Anyone may leave; ADMIN removes MEMBER/ADMIN; only OWNER removes an owner. The last OWNER cannot leave (409 `LAST_OWNER`). Removing a member deletes their private conversations in that org (ADR-020). |
+
+All membership changes lock the organization row and re-read the actor's current role, so concurrent changes cannot leave an organization without an owner (tested with forced interleavings).
 
 ### Knowledge bases
 | Method | Path | Role | Description |

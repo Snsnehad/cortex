@@ -20,36 +20,27 @@ Routes then use ``ctx.organization_id``, never the raw path value, for every que
 
 import uuid
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
 from typing import Annotated, Any
 
 import structlog
 from fastapi import Depends, Path
 
-from app.core.errors import NotFoundError, PermissionDeniedError
+from app.core.errors import PermissionDeniedError
+from app.core.tenancy import OrganizationNotFoundError, OrgContext
 from app.dependencies.auth import CurrentUser
 from app.dependencies.database import DbSession
-from app.models import OrgRole, User
+from app.models import OrgRole
 from app.repositories.organizations import OrganizationRepository
 
-
-@dataclass(frozen=True, slots=True)
-class OrgContext:
-    organization_id: uuid.UUID
-    user: User
-    role: OrgRole
-
-    @property
-    def user_id(self) -> uuid.UUID:
-        return self.user.id
-
-    def has_role(self, minimum: OrgRole) -> bool:
-        return self.role.at_least(minimum)
-
-
-class OrganizationNotFoundError(NotFoundError):
-    default_code = "ORGANIZATION_NOT_FOUND"
-    default_message = "Organization not found."
+__all__ = [
+    "AdminContext",
+    "OrgContext",
+    "OrgContextDep",
+    "OrganizationNotFoundError",
+    "OwnerContext",
+    "get_org_context",
+    "require_role",
+]
 
 
 async def get_org_context(

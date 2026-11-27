@@ -443,3 +443,19 @@ async def create_kb(ctx: AdminContext, ...):        # ADMIN or OWNER
 - Log lines of the request (including the access log) carry `user_id` and `organization_id`. The middleware removes them when the request ends.
 
 **Lesson from the mutation test:** a membership lookup that forgot the `organization_id` filter passed every role-matrix test (they only use the caller's own organization) and failed only the cross-tenant tests. Every new org-scoped route therefore gets an explicit "member of another org gets 404" test (enforced from TASK-03.08).
+
+## Organizations and members (TASK-03.06)
+
+Routes: `app/api/v1/organizations.py`. Rules: `app/services/organizations.py`. Contract: [API_SPECIFICATION.md](../../API_SPECIFICATION.md) (Organizations & members).
+
+| Actor | May add | May change roles of | May remove |
+|---|---|---|---|
+| OWNER | anyone, any role | anyone (incl. owners) | anyone except the last owner |
+| ADMIN | MEMBER / ADMIN | MEMBERs and ADMINs, not to OWNER | MEMBERs and ADMINs |
+| MEMBER | nobody | nobody | only themself (leave) |
+
+- **Never trust `OrgContext.role` for membership changes.** It was read at the start of the request. The service locks the organization row (`SELECT … FOR UPDATE`, a per-organization mutex) and re-reads the actor's and the target's roles before deciding.
+- An organization always keeps at least one OWNER (`LAST_OWNER`).
+- `OrgContext` now lives in `app/core/tenancy.py`, so services can use it without importing the web layer (this also broke an import cycle). `app.dependencies.orgs` re-exports it.
+- Organization creation (unique slugs) is shared by registration and `POST /orgs` via `OrganizationService.add_with_owner`.
+- Removing a member cascades to their private conversations in that organization (ADR-020, still open to change).

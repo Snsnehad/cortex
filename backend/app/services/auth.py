@@ -13,9 +13,6 @@ Security properties (TASK-03.04):
   password); the session making the change stays signed in.
 """
 
-import re
-import secrets
-import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,16 +25,14 @@ from app.core.errors import AuthenticationError, ConflictError, ValidationFailed
 from app.core.passwords import PasswordHasher, validate_password
 from app.core.refresh_tokens import InvalidRefreshTokenError, hash_refresh_token
 from app.core.tokens import AccessToken, AccessTokenService
-from app.models import Organization, OrganizationMembership, OrgRole, User
+from app.models import Organization, OrganizationMembership, User
 from app.repositories.organizations import OrganizationRepository
 from app.repositories.refresh_tokens import RefreshTokenRepository
 from app.repositories.users import UserRepository
+from app.services.organizations import OrganizationService
 from app.services.sessions import IssuedRefreshToken, SessionService
 
 EMAIL_UNIQUE_INDEX = "uq_users_email_lower"
-SLUG_UNIQUE_CONSTRAINT = "uq_organizations_slug"
-SLUG_MAX_LENGTH = 60
-_SLUG_ATTEMPTS = 3
 
 
 class InvalidCredentialsError(AuthenticationError):
@@ -64,15 +59,6 @@ def _utcnow() -> datetime:
 def _violated_constraint(exc: IntegrityError) -> str | None:
     diag = getattr(exc.orig, "diag", None)
     return getattr(diag, "constraint_name", None)
-
-
-def slugify(name: str) -> str:
-    """'Acme Corp. (EU)' -> 'acme-corp-eu'. ASCII only, safe in URLs."""
-    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    # Apostrophes join words ("Alice's" -> "alices"), they do not separate them.
-    ascii_name = ascii_name.replace("'", "")
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
-    return slug[:SLUG_MAX_LENGTH].strip("-") or "org"
 
 
 class AuthService:
@@ -123,13 +109,8 @@ class AuthService:
                 raise self._email_taken() from exc
             raise
 
-        organization = await self._create_organization(
-            organization_name or f"{full_name}'s workspace", creator=user
-        )
-        self._organizations.add_membership(
-            OrganizationMembership(
-                organization_id=organization.id, user_id=user.id, role=OrgRole.OWNER
-            )
+        organization = await OrganizationService(self._session).add_with_owner(
+            organization_name or f"{full_name}'s workspace", owner=user
         )
         await self._session.commit()
 
@@ -144,27 +125,6 @@ class AuthService:
     @staticmethod
     def _email_taken() -> ConflictError:
         return ConflictError("An account with this email already exists.", code="EMAIL_TAKEN")
-
-    async def _create_organization(self, name: str, *, creator: User) -> Organization:
-        base = slugify(name)
-        candidate = base
-        if await self._organizations.slug_exists(candidate):
-            candidate = f"{base}-{secrets.token_hex(3)}"
-        for _ in range(_SLUG_ATTEMPTS):
-            organization = Organization(name=name, slug=candidate, created_by_user_id=creator.id)
-            try:
-                # Savepoint: a slug collision (concurrent registration) rolls back only this
-                # insert, not the user created earlier in the same transaction.
-                async with self._session.begin_nested():
-                    self._organizations.add(organization)
-                    await self._session.flush()
-            except IntegrityError as exc:
-                if _violated_constraint(exc) != SLUG_UNIQUE_CONSTRAINT:
-                    raise
-                candidate = f"{base}-{secrets.token_hex(3)}"
-                continue
-            return organization
-        raise ConflictError("Could not allocate an organization address. Please retry.")
 
     # --- sessions -------------------------------------------------------------------------------
 
