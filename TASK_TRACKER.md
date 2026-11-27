@@ -3,7 +3,7 @@
 > Source of truth for **status**. Definitions and completion conditions live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 > A task is `COMPLETED` only when: implementation finished, relevant tests **executed and passing**, acceptance criteria met, docs updated.
 > Statuses: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `COMPLETED` · `NEEDS_REVIEW`
-> Last updated: 2026-11-27 (Session 2, after TASK-04.06; Phase 4 complete)
+> Last updated: 2026-11-27 (Session 2, after TASK-05.01)
 
 ## Summary
 
@@ -14,7 +14,7 @@
 | PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
 | PHASE-03 | Auth & multi-tenancy | COMPLETED | 9 / 9 |
 | PHASE-04 | Upload & storage | COMPLETED | 6 / 6 |
-| PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
+| PHASE-05 | Background processing | IN_PROGRESS | 1 / 6 |
 | PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
 | PHASE-07 | Embeddings & Qdrant | NOT_STARTED | 0 / 7 (+1 stretch) |
 | PHASE-08 | Dense & sparse retrieval | NOT_STARTED | 0 / 5 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-05.01 — Celery app: JSON serializer, `acks_late`, `task_reject_on_worker_lost`, prefetch 1, soft/hard time limits, per-process DB engine, structured logging with task id.
-**Next task:** TASK-05.02 (job state machine + atomic claim, leases).
+**Current task:** TASK-05.02 — job state machine: atomic claim (`UPDATE … WHERE status IN (QUEUED, RETRYING) … RETURNING`), lease set/renew, allowed transitions; two concurrent claims → exactly one winner.
+**Next task:** TASK-05.03 (task base: TransientError vs PermanentError, backoff with jitter, max attempts).
 
 ## Known blockers
 
@@ -114,7 +114,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
-| TASK-05.01 | Celery app config | NOT_STARTED | 01.04, 02.01 | | | | |
+| TASK-05.01 | Celery app config | COMPLETED | 01.04, 02.01 | app/workers/celery_app.py (create_celery: JSON only, acks_late, reject_on_worker_lost, prefetch 1, soft/hard limits, visibility timeout, no result backend, Celery must not touch logging; signals bind task_id/task_name and log task.started/task.finished with duration), app/workers/runtime.py (per-process WorkerContext: one asyncio.Runner + engine named cortex-worker; pid-checked; run_async; shutdown), app/workers/tasks.py (cortex.ping: reaches PostgreSQL), app/config/settings.py (WorkerSettings with limit validation), .env.example, pyproject.toml/uv.lock (celery[redis] 5.7.0; dev: celery-types), DECISIONS.md (ADR-004 amendment), TECH_STACK.md, docs/development/README.md | tests/unit/test_worker_config.py (10), tests/integration/test_worker.py (5) | ruff · mypy · pytest 789 passed, 1 skipped · reliability settings asserted · limits validated (hard > soft, visibility > hard) · broker URL secret · ping reaches the DB · 3 tasks reuse one loop and pool · JSON logs carry task_id/task_name and duration; no task_id leaks afterwards · a real worker thread consumes from Redis on its own queue · per-process context: reused within a pid, rebuilt after a (simulated) fork, a child never closes its parent's · **container check**: cortex-backend image with `celery … worker` on the compose network, read-only FS, caps dropped → booted, JSON logs, consumed a ping sent from the host via Redis, created its context in the child (pid 8), warm shutdown closed it · mutations, all 8 killed (asyncio.run per task, no pid check, child closes parent, acks early, pickle accepted, no visibility check, no task_id binding, task_id leaks [test added after it survived]) | ADR-004 amended: one event loop per process, not asyncio.run per task (proved by mutation). Celery prints a plain-text banner at startup: the compose worker (05.06) will use `--quiet`. Worker and beat compose services are TASK-05.06; Docker RAM is still ~2.8 GB (B-02). |
 | TASK-05.02 | Job state machine + atomic claim + lease | NOT_STARTED | 05.01, 02.04 | | | | |
 | TASK-05.03 | Retry policy, transient vs permanent | NOT_STARTED | 05.02 | | | | |
 | TASK-05.04 | Post-commit enqueue + reconciler | NOT_STARTED | 05.03 | | | | |

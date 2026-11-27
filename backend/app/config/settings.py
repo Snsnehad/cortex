@@ -163,6 +163,28 @@ class RAGSettings(BaseModel):
         return self
 
 
+class WorkerSettings(BaseModel):
+    # Celery broker: Redis database 1, so queue keys never mix with rate-limit keys (db 0).
+    broker_url: SecretStr = SecretStr("redis://127.0.0.1:16379/1")  # Cortex compose host port
+    concurrency: int = Field(default=2, ge=1, le=64)
+    # A task gets SoftTimeLimitExceeded at the soft limit (time to record the failure), and
+    # is killed at the hard limit.
+    task_soft_time_limit_seconds: int = Field(default=600, ge=10)
+    task_time_limit_seconds: int = Field(default=660, ge=11)
+    # Redis redelivers an unacknowledged task after this long. With acks_late a task is
+    # acknowledged only when it finishes, so this must exceed the longest possible run, or a
+    # slow but healthy task would be delivered to a second worker while still running.
+    visibility_timeout_seconds: int = Field(default=3600, ge=60)
+
+    @model_validator(mode="after")
+    def _check_limits(self) -> Self:
+        if self.task_time_limit_seconds <= self.task_soft_time_limit_seconds:
+            raise ValueError("worker.task_time_limit_seconds must exceed the soft limit")
+        if self.visibility_timeout_seconds <= self.task_time_limit_seconds:
+            raise ValueError("worker.visibility_timeout_seconds must exceed task_time_limit")
+        return self
+
+
 class RateLimitSettings(BaseModel):
     # Staging/production refuse to start with rate limiting disabled.
     enabled: bool = True
@@ -203,6 +225,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
 
     @model_validator(mode="before")
     @classmethod

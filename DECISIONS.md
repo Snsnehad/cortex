@@ -37,6 +37,7 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Context**: FastAPI benefits from async I/O (LLM calls, DB). Celery tasks are synchronous. Maintaining sync + async repositories would duplicate code.
 * **Decision**: Async repositories/services only. Celery tasks are thin sync wrappers calling `asyncio.run(...)`. Each worker process creates its own engine after fork.
 * **Consequences**: One code path. Small per-task event loop overhead (negligible versus parsing/embedding). Must never share engines across forked processes.
+* **Amendment (2026-11-27, TASK-05.01)**: not `asyncio.run()` per task. It creates a new event loop each time, and an async pool's connections belong to the loop that opened them, so from the second task on pooled connections are unusable (proven: with `asyncio.run` the second task fails). Instead each worker process keeps one `asyncio.Runner` for its lifetime, and the engine lives on that loop (`app/workers/runtime.py`). The context is created lazily in the process that uses it and rebuilt when the pid changes, so a forked child never reuses its parent's pool; it is disposed on `worker_process_shutdown`.
 
 ### ADR-005 — Org scope in the URL path, verified server-side on every request
 * **Status**: Accepted (2026-11-26)

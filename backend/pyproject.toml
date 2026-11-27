@@ -8,6 +8,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.20.1",
     "boto3>=1.44.12",
+    "celery[redis]>=5.7.0",
     "email-validator>=2.4.0",
     "fastapi>=0.165.0",
     "httpx>=0.28.1",
@@ -118,6 +119,7 @@ markers = [
 
 [dependency-groups]
 dev = [
+    "celery-types>=0.26.0",
     "moto[s3,server]>=5.2.6",
     "mypy>=2.4.1",
     "pytest>=9.2.0",

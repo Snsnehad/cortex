@@ -561,3 +561,29 @@ curl.exe -X POST "http://127.0.0.1:8000/api/v1/orgs/<org_id>/knowledge-bases/<kb
 - **Visible** documents only: `DocumentRepository.get_visible(org_id, document_id)` / `visible_in_kb_query(...)` exclude `DELETING` documents and (via a join) documents of deleted knowledge bases. Never load a document by id alone in request code.
 - Filename search: `escape_like()` makes `%`, `_` and `\` literal; use `ilike(pattern, escape=LIKE_ESCAPE)`. Put only a hash of free-text filters into a cursor scope (cursors are readable base64).
 - Downloads: `DocumentService.download` returns either a presigned `redirect_url` (S3) or a stream whose first chunk is already read, so storage errors surface before the response headers are sent. Streamed responses always carry `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`.
+
+## Background worker (TASK-05.01, ADR-001/004/015)
+
+Code: `app/workers/` (`celery_app.py`, `runtime.py`, `tasks.py`). The worker runs **only in Linux containers** (ADR-015); compose services arrive in TASK-05.06. Until then, to try it:
+
+```powershell
+docker compose -f infra/compose/docker-compose.yml --profile app build api
+docker compose -f infra/compose/docker-compose.yml --profile app run --rm --no-deps -e CORTEX_WORKER__BROKER_URL=redis://redis:6379/1 api celery -A app.workers.celery_app worker --loglevel=INFO --quiet
+```
+
+**Writing a task** (delivery is at-least-once: every task must be safe to run twice):
+
+```python
+@shared_task(name="cortex.something")
+def something(job_id: str) -> None:            # JSON-serialisable arguments only
+    run_async(_something, uuid.UUID(job_id))
+
+async def _something(ctx: WorkerContext, job_id: uuid.UUID) -> None:
+    async with ctx.session_factory() as session:
+        ...
+```
+
+- Never `asyncio.run()` inside a task: `run_async` uses the process's single event loop, on which its database pool lives (ADR-004 amendment).
+- Settings: `CORTEX_WORKER__*` (broker on Redis **db 1**, apart from rate limits on db 0; soft/hard time limits; visibility timeout, which must exceed the hard limit).
+- Every log line inside a task carries `task_id` and `task_name`; `task.started` / `task.finished` (with `state` and `duration_ms`) bracket each run.
+- Tests: run tasks eagerly with `app.tasks[name].apply()` in **synchronous** tests (`tests/integration/test_worker.py`); `start_worker(app, pool="solo", queues=[unique])` runs a real worker thread against the compose Redis.
