@@ -3,7 +3,7 @@
 > Source of truth for **status**. Definitions and completion conditions live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 > A task is `COMPLETED` only when: implementation finished, relevant tests **executed and passing**, acceptance criteria met, docs updated.
 > Statuses: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `COMPLETED` · `NEEDS_REVIEW`
-> Last updated: 2026-11-27 (Session 2, after TASK-03.09; Phase 3 complete)
+> Last updated: 2026-11-27 (Session 2, after TASK-04.01)
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
 | PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
 | PHASE-03 | Auth & multi-tenancy | COMPLETED | 9 / 9 |
-| PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
+| PHASE-04 | Upload & storage | IN_PROGRESS | 1 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
 | PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
 | PHASE-07 | Embeddings & Qdrant | NOT_STARTED | 0 / 7 (+1 stretch) |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-04.01 — `StorageBackend` protocol with `LocalStorage` (root-confined, traversal-safe) and `S3Storage` (moto-tested), one shared contract suite.
-**Next task:** TASK-04.02 (knowledge-base CRUD with RBAC + isolation cases).
+**Current task:** TASK-04.02 — knowledge-base CRUD (service, repository, routes; soft delete, stats) with RBAC tests and isolation cases.
+**Next task:** TASK-04.03 (upload validation: streamed size limit, type detection from bytes, filename sanitization).
 
 ## Known blockers
 
@@ -103,7 +103,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
-| TASK-04.01 | Storage protocol, local + S3 | NOT_STARTED | 01.03 | | | | |
+| TASK-04.01 | Storage protocol, local + S3 | COMPLETED | 01.03 | app/storage/base.py (StorageBackend protocol, StoredObject, key validation, document_key, ContentMeter, read_all, content_disposition, errors incl. 503 STORAGE_UNAVAILABLE), app/storage/local.py (LocalStorage), app/storage/s3.py (S3Storage, create_s3_client), app/storage/__init__.py (create_storage), app/config/settings.py (s3_sse, s3_kms_key_id, presigned_url_ttl_seconds), .env.example, pyproject.toml/uv.lock (boto3; dev: moto[s3,server], types-boto3[s3]), docs/development/README.md | tests/unit/test_storage.py (75: 13 contract tests × local and S3, key validation, local confinement, S3 encryption/presign/error mapping, download names) | ruff · mypy · pytest 562 passed, 1 skipped (symlink test needs Developer Mode on Windows; runs on Linux CI) · S3 tested over real HTTP against moto's server, no Docker · size + SHA-256 computed in the single streaming pass · oversized/failed upload leaves no object and keeps the previous one · local: two independent walls (key validation; resolved path inside root, tested with the first wall switched off), Windows device names refused, atomic temp-file + rename · S3: SSE on every put, nothing uploaded before the limit check, presigned GET fetched over HTTP with forced attachment, tampered URL → 403 · network/5xx/throttling → 503, AccessDenied stays a 500 · mutations, all 12 killed (limit off-by-one, no containment, no device check, no temp cleanup, write in place, S3 no limit, no SSE, not-found unmapped, 5xx not retryable, network unmapped, inline disposition, read_all not closing the stream) | Found by the tests: abandoning a stream early (over-limit read, failed upload) left the file/response open until GC; streams are now closed explicitly (`aclosing`), and the protocol returns AsyncGenerator so that is type-checked. Storage is not on app.state yet: wired by the upload endpoint (04.03–04.05), so app start does not create folders nobody uses. |
 | TASK-04.02 | KB CRUD | NOT_STARTED | 03.05, 02.04 | | | | |
 | TASK-04.03 | Upload validation | NOT_STARTED | 04.01 | | | | |
 | TASK-04.04 | Hashing + dedup | NOT_STARTED | 04.03 | | | | |

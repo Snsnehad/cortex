@@ -81,12 +81,20 @@ class StorageSettings(BaseModel):
     s3_region: str | None = None
     # Only for S3-compatible services in testing (e.g. MinIO); empty for real AWS.
     s3_endpoint_url: str | None = None
+    # Server-side encryption for every object: S3-managed keys, or KMS (optionally a specific
+    # key; without one, the account's AWS-managed key for S3 is used).
+    s3_sse: Literal["AES256", "aws:kms"] = "AES256"
+    s3_kms_key_id: str | None = None
+    # Lifetime of direct download links (S3 presigned GET).
+    presigned_url_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
 
     @model_validator(mode="after")
     def _s3_requires_bucket(self) -> Self:
         if self.backend == "s3" and not self.s3_bucket:
             raise ValueError("storage.s3_bucket is required when storage.backend is 's3'")
+        if self.s3_kms_key_id and self.s3_sse != "aws:kms":
+            raise ValueError("storage.s3_kms_key_id requires storage.s3_sse = 'aws:kms'")
         return self
 
 

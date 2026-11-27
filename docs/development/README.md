@@ -477,3 +477,21 @@ Limiter: `app/core/rate_limit.py`. Route dependencies: `app/dependencies/rate_li
 - **Adding a limit**: add a `RateLimitPolicy` to `RateLimitGuard`, a setting for its limit, and either a route dependency (identity known from the request) or a `guard.check(...)` call in the route (identity from the body).
 - **Client IP** is the TCP peer. Behind a load balancer this must come from trusted proxy configuration (Phase 16); never read `X-Forwarded-For` directly, as clients can forge it.
 - **Tests**: `test_settings` gives every test its own key prefix and very high limits, so ordinary tests never hit 429. Rate-limit tests set low limits through `limited_settings(...)` in `tests/integration/test_rate_limit.py`.
+
+## File storage (TASK-04.01)
+
+Code: `app/storage/`. Depend only on the `StorageBackend` protocol; get a backend with `create_storage(settings.storage)` (the upload endpoint will put one on `app.state`).
+
+| | `LocalStorage` (`CORTEX_STORAGE__BACKEND=local`) | `S3Storage` (`s3`; required in staging/production) |
+|---|---|---|
+| Where | `CORTEX_STORAGE__LOCAL_ROOT` (default `.data/storage`, git-ignored) | `CORTEX_STORAGE__S3_BUCKET` (private) |
+| Writes | temp file in the same folder, fsync, atomic rename | spooled (8 MiB in memory, then temp file) and uploaded once within the limit; multipart for large files |
+| Encryption | none (development only) | `ServerSideEncryption` on every put (`AES256` or `aws:kms` + optional key) |
+| Direct download | none (`presigned_get_url` returns `None`; stream it) | presigned GET, `Content-Disposition: attachment` forced |
+| Credentials | n/a | boto3 default chain (env, profile, instance/task role); never in Cortex settings |
+
+- **Keys** come from ids only: `document_key(org_id, kb_id, doc_id)` → `orgs/{org}/kbs/{kb}/docs/{doc}/original`. `validate_key` rejects anything else (`..`, absolute paths, backslashes, drive letters, hidden or trailing-dot segments, > 500 chars).
+- **`put`** returns `StoredObject(key, size_bytes, sha256)` from one streaming pass. Over `max_bytes` → `PayloadTooLargeError` (413) and **no object** (an existing one at the key is untouched).
+- **Reading:** `iter_chunks(key)` streams. If you might stop early, close it: `async with aclosing(storage.iter_chunks(key)) as chunks:`. `read_all(storage, key, max_bytes=...)` does that for you.
+- **Errors:** `ObjectNotFoundError`; `InvalidStorageKeyError` (a bug, keys never come from users); `StorageUnavailableError` → 503 `STORAGE_UNAVAILABLE` (network, timeouts, S3 5xx/throttling). Access denied or a missing bucket is a configuration error and stays a 500.
+- **Tests** (`tests/unit/test_storage.py`) need no Docker: S3 runs against moto's server in the test process. Add a contract test once and it runs on both backends.
