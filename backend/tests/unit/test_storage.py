@@ -123,7 +123,7 @@ def leftovers(storage: StorageBackend) -> list[str]:
     """Temporary files left in a local root (S3 has none to leave)."""
     if not isinstance(storage, LocalStorage):
         return []
-    return [p.name for p in storage.root.rglob("*") if p.name.endswith(".tmp")]
+    return [p.name for p in storage.root.rglob("*") if p.is_file() and p.name.endswith(".tmp")]
 
 
 # --- keys -----------------------------------------------------------------------------------
@@ -486,3 +486,15 @@ async def test_s3_configuration_errors_are_not_disguised_as_outages() -> None:
 )
 def test_content_disposition_is_safe(filename: str, expected: str) -> None:
     assert content_disposition(filename) == expected
+
+
+async def test_real_document_keys_work_in_a_deep_root(storage: StorageBackend) -> None:
+    """Regression (found in TASK-04.04): a real key is ~130 characters. The local backend's
+    temporary file used to sit next to the destination with a ~46-character name, which
+    pushed the path past Windows' 260-character limit in a deep root such as pytest's."""
+    key = document_key(uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
+
+    await storage.put(key, CONTENT, content_type="text/plain")
+
+    assert await read_all(storage, key) == CONTENT
+    assert leftovers(storage) == []

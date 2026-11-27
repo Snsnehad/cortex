@@ -9,8 +9,11 @@ Confinement to ``root`` has two independent walls:
    refused, as are Windows device names (``CON``, ``NUL``, ``COM1`` …) that would address a
    device instead of a file.
 
-Writes go to a temporary file in the destination directory, are flushed to disk, then
-renamed over the destination (``os.replace`` is atomic on one filesystem). A reader never
+Writes go to a temporary file in ``<root>/.tmp/``, are flushed to disk, then renamed over
+the destination (``os.replace`` is atomic within one filesystem). The temporary name is short
+on purpose: document keys are ~130 characters, and Windows refuses paths over 260 (a long
+``<dir>/.original.<uuid>.tmp`` next to the destination exceeded it). ``.tmp`` can never
+collide with a key, because key segments cannot start with a dot. A reader never
 sees a half-written file, and a failed or oversized upload leaves nothing behind.
 
 Blocking file I/O runs in worker threads, so the event loop keeps serving other requests.
@@ -37,6 +40,7 @@ from app.storage.base import (
     validate_key,
 )
 
+TEMP_DIR_NAME = ".tmp"
 _WINDOWS_DEVICE = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", re.IGNORECASE)
 
 
@@ -46,6 +50,8 @@ class LocalStorage:
     def __init__(self, root: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
         self._root = root.resolve(strict=True)
+        self._temp_dir = self._root / TEMP_DIR_NAME
+        self._temp_dir.mkdir(exist_ok=True)
 
     @property
     def root(self) -> Path:
@@ -70,8 +76,7 @@ class LocalStorage:
     ) -> StoredObject:
         path = self.path_for(key)
         await to_thread.run_sync(lambda: path.parent.mkdir(parents=True, exist_ok=True))
-        # A leading dot can never be a valid key, so the temporary file cannot collide.
-        temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temp = self._temp_dir / f"{uuid.uuid4().hex}.tmp"
         meter = ContentMeter(max_bytes)
         handle: BinaryIO = await to_thread.run_sync(temp.open, "xb")
         try:

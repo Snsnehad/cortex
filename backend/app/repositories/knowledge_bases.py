@@ -52,13 +52,19 @@ class KnowledgeBaseRepository:
         )
 
     async def get_active(
-        self, organization_id: uuid.UUID, knowledge_base_id: uuid.UUID
+        self, organization_id: uuid.UUID, knowledge_base_id: uuid.UUID, *, for_share: bool = False
     ) -> KnowledgeBase | None:
         """One knowledge base, by (organization, id). Never by id alone: an id from another
-        organization must look exactly like an id that does not exist."""
-        knowledge_base: KnowledgeBase | None = await self._session.scalar(
-            self.active_query(organization_id).where(KnowledgeBase.id == knowledge_base_id)
-        )
+        organization must look exactly like an id that does not exist.
+
+        ``for_share=True`` locks the row against changes (``FOR SHARE``) until the transaction
+        ends: a concurrent soft delete waits, so nothing is added to a knowledge base that is
+        being deleted at that moment.
+        """
+        query = self.active_query(organization_id).where(KnowledgeBase.id == knowledge_base_id)
+        if for_share:
+            query = query.with_for_update(read=True).execution_options(populate_existing=True)
+        knowledge_base: KnowledgeBase | None = await self._session.scalar(query)
         return knowledge_base
 
     async def stats(

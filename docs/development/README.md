@@ -485,7 +485,7 @@ Code: `app/storage/`. Depend only on the `StorageBackend` protocol; get a backen
 | | `LocalStorage` (`CORTEX_STORAGE__BACKEND=local`) | `S3Storage` (`s3`; required in staging/production) |
 |---|---|---|
 | Where | `CORTEX_STORAGE__LOCAL_ROOT` (default `.data/storage`, git-ignored) | `CORTEX_STORAGE__S3_BUCKET` (private) |
-| Writes | temp file in the same folder, fsync, atomic rename | spooled (8 MiB in memory, then temp file) and uploaded once within the limit; multipart for large files |
+| Writes | temp file in `<root>/.tmp/` (short names: Windows 260-char paths), fsync, atomic rename | spooled (8 MiB in memory, then temp file) and uploaded once within the limit; multipart for large files |
 | Encryption | none (development only) | `ServerSideEncryption` on every put (`AES256` or `aws:kms` + optional key) |
 | Direct download | none (`presigned_get_url` returns `None`; stream it) | presigned GET, `Content-Disposition: attachment` forced |
 | Credentials | n/a | boto3 default chain (env, profile, instance/task role); never in Cortex settings |
@@ -530,3 +530,15 @@ finally:
 - `upload.filename` is already sanitized for display. It is never used in a path or storage key.
 - `detect_file_type` is synchronous (it may read the whole file for the UTF-8 check): `detect_upload` runs it in a worker thread.
 - Tests: `tests/unit/test_upload_detect.py` shows how to craft DOCX/ZIP variants; `tests/unit/test_upload_receive.py` shows how to prove a limit acts before the body is read (`CountingBody`).
+
+## Adding documents (TASK-04.04)
+
+`DocumentService(session, storage).add(ctx, kb_id, upload, detected)` (`app/services/documents.py`):
+
+1. **Pre-check** (one indexed lookup): a live document with the same SHA-256 in this knowledge base → 409 `DOCUMENT_DUPLICATE`, `details.existing_document_id`, nothing stored. The read transaction ends before the upload to storage.
+2. **Store** under `document_key(org, kb, new_id)`; the stored size/hash must equal the received ones.
+3. **Insert** the `PENDING` document in a short transaction that locks the knowledge base `FOR SHARE` (a concurrent soft delete waits).
+
+- A lost race on `uq_documents_kb_content_hash_active` deletes the just-stored object and returns 409 with the **winner's** id.
+- Any failure after step 2 begins, including cancellation, deletes the object inside a shielded `CancelScope`; if that fails too, `document.cleanup_failed` is logged with the key (never the filename).
+- **Async SQLAlchemy pitfall:** `session.rollback()` expires every loaded object. Read the attributes you need (ids) *before* rolling back, or the access triggers a lazy refresh and fails with `MissingGreenlet`.
