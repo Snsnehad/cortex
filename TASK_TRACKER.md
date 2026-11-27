@@ -3,7 +3,7 @@
 > Source of truth for **status**. Definitions and completion conditions live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 > A task is `COMPLETED` only when: implementation finished, relevant tests **executed and passing**, acceptance criteria met, docs updated.
 > Statuses: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `COMPLETED` · `NEEDS_REVIEW`
-> Last updated: 2026-11-27 (Session 2, after TASK-03.07)
+> Last updated: 2026-11-27 (Session 2, after TASK-03.08)
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | PHASE-00 | Planning & architecture | COMPLETED | 7 / 7 |
 | PHASE-01 | Dev environment & repo | COMPLETED | 9 / 9 |
 | PHASE-02 | Database & backend foundation | COMPLETED | 8 / 8 |
-| PHASE-03 | Auth & multi-tenancy | IN_PROGRESS | 7 / 9 |
+| PHASE-03 | Auth & multi-tenancy | IN_PROGRESS | 8 / 9 |
 | PHASE-04 | Upload & storage | NOT_STARTED | 0 / 6 |
 | PHASE-05 | Background processing | NOT_STARTED | 0 / 6 |
 | PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-03.08 — tenant-isolation test framework (every org-scoped route must have a cross-tenant 404 case).
-**Next task:** TASK-03.09 (security model doc).
+**Current task:** TASK-03.09 — security model doc (`docs/architecture/security-model.md`).
+**Next task:** TASK-04.01 (Phase 4: upload & storage).
 
 ## Known blockers
 
@@ -96,7 +96,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | TASK-03.05 | Current user, OrgContext, require_role | COMPLETED | 03.04 | app/dependencies/orgs.py (OrgContext, OrgContextDep, require_role, AdminContext, OwnerContext, OrganizationNotFoundError), app/repositories/organizations.py (get_membership), app/dependencies/auth.py (binds user_id to logs), app/middleware/request_context.py (removes request-scoped log keys), docs/development/README.md | tests/integration/test_org_context.py (19) | ruff · mypy · pytest 410 passed · 3 random seeds green · full 3×3 role matrix · member of another org → 404 on member/admin/owner routes · unknown vs foreign org bodies identical · anonymous → 401 for existing and unknown orgs · deactivated → 401 · role change and removal apply to the next request with the same token · logs carry user_id/organization_id without leaking into the next request · mutations: membership looked up by user only → 4 cross-tenant tests fail (role matrix still passed!); log keys not removed → leak test fails | CurrentUser itself was built in 03.04. Insight recorded: only cross-tenant tests catch a missing org filter, which motivates TASK-03.08 |
 | TASK-03.06 | Org + member management | COMPLETED | 03.05 | app/api/v1/organizations.py, app/services/organizations.py (OrganizationService, slugify moved here), app/schemas/organizations.py, app/core/tenancy.py (OrgContext moved here; breaks an import cycle), app/dependencies/orgs.py (re-exports), app/repositories/organizations.py (lock, count_owners, paginated queries), app/services/auth.py (uses add_with_owner), app/api/v1/router.py, API_SPECIFICATION.md, docs/development/README.md, docs/testing/README.md | tests/integration/test_organizations_api.py (36), tests/unit/test_slugify.py (import path) | ruff · mypy · pytest 446 passed · org tests green under 6 random seeds · list/create/get/rename (slug kept) · members list paginated, private to members · add: role rules, USER_NOT_FOUND (unknown/inactive), ALREADY_MEMBER · role-change and removal permission matrices · LAST_OWNER · ADR-020 cascade verified · mutations: no last-owner check → 2 fail; **no lock and stale role initially SURVIVED** (gather does not overlap at the critical point) → tests rewritten with a barrier on count_owners and a hook inside lock → both mutations now fail 3/3 | Lesson recorded in docs/testing: prove concurrency tests with mutations. Enumeration note: POST /members reveals whether an email has an account to ADMINs (accepted; rate limiting in 03.07) |
 | TASK-03.07 | Redis rate limiter | COMPLETED | 03.04 | app/core/rate_limit.py (Lua sliding-window log, RateLimitPolicy, RateLimitUnavailableError), app/dependencies/rate_limit.py (RateLimitGuard, IP dependencies, email normalization), app/config/settings.py (RateLimitSettings; deployed envs require enabled), app/main.py (Redis client on app.state, closed on shutdown), app/api/v1/auth.py (register 5/h/IP; login 10/min/IP + 5/min/email), .env.example, tests/integration/conftest.py (per-test key prefix, high limits), API_SPECIFICATION.md, DECISIONS.md (ADR-011 implementation), docs/development/README.md | tests/unit/test_rate_limit_unit.py (14), tests/integration/test_rate_limit.py (11), tests/unit/test_settings.py (+1) | ruff · mypy · pytest 472 passed · exact limit then 429 + Retry-After · identities/policies separate · sliding window, rejections not recorded · 30 concurrent vs limit 5 → exactly 5 · keys hashed + TTL · per-account limit ignores case/spaces · Redis down → 503 and nothing created · disabled → Redis never touched · logs carry a hash prefix only · mutations: off-by-one, no email normalization, fail-open default, email limit removed, register limit removed, raw identity in key → all fail; **recording rejections initially SURVIVED** (the key TTL expired the evidence) → test rewritten, now fails; non-atomic check-then-add → concurrency test fails 3/3 | Client IP = TCP peer; trusted-proxy handling (X-Forwarded-For) is configured in Phase 16. An over-limit login still consumes the per-IP budget (accepted). |
-| TASK-03.08 | Tenant-isolation test framework | NOT_STARTED | 03.05 | | | | |
+| TASK-03.08 | Tenant-isolation test framework | COMPLETED | 03.05 | tests/integration/tenancy.py (World: two orgs × owner/admin/member + outsider; ISOLATION_CASES; NOT_TENANT_SCOPED with reasons; whole-database snapshot), docs/testing/README.md | tests/integration/test_tenant_isolation.py (17: registry completeness, no hidden routes, 6 foreign-org probes × 3 attackers, 2 foreign-resource probes, 6 positive controls) | ruff · mypy · pytest 489 passed · every API operation (17, from the OpenAPI schema) classified · foreign org → 404 identical to an unknown org for B's owner/admin/member, database unchanged · A's member addressed through B's org → 404 identical to an unknown id, unchanged · A's owner succeeds with the same requests · mutations, all killed: membership lookup ignores org (8 fail), member target looked up in any org (2), side effect before the 404 (6, snapshot), foreign 404 worded differently (6), registry case deleted (1), new org route without a case (1) | FastAPI 0.165 keeps included routers as private lazy `_IncludedRouter` nodes, so routes are discovered from the OpenAPI schema; `include_in_schema=False` under app/ is forbidden by a test so no route can hide. New resources (KBs, documents, conversations) extend `World.resources_a` as they arrive |
 | TASK-03.09 | Security model doc | NOT_STARTED | 03.06 | | | | |
 
 ### PHASE-04 — Upload & storage

@@ -116,3 +116,23 @@ monkeypatch.setattr(OrganizationRepository, "count_owners", count_then_wait)
 Likewise, a "stale role" test that demoted the actor *before* the request never exercised the stale window (the org check at the start of the request already saw the new role). The working test demotes the actor from inside the `lock` call, i.e. after the org check and before the lock.
 
 **Rule:** every concurrency test must be proven by a mutation that removes the protection it is about.
+
+## Tenant isolation: every route is probed (TASK-03.08)
+
+`tests/integration/tenancy.py` classifies **every** API operation, either as an `IsolationCase` (lives under `/orgs/{org_id}`) or in `NOT_TENANT_SCOPED` with a reason. `tests/integration/test_tenant_isolation.py` then checks, for every case:
+
+| Probe | Caller | Request | Expected |
+|---|---|---|---|
+| Foreign organization | B's owner, admin and member | A's org id | 404, body identical to an unknown org id; database unchanged |
+| Foreign resource | B's owner | B's org id + A's resource ids | 404, body identical to an unknown resource id; database unchanged |
+| Positive control | A's owner | A's org id + A's resources | `ok_status` (proves the probes hit a real route) |
+
+"Database unchanged" compares every row of every table before and after, so a side effect that happens before the 404 is caught too.
+
+**When you add a route:** the build fails (`test_every_route_is_classified`) until you add it to the registry.
+
+1. Under `/orgs/{org_id}`: add an `IsolationCase(method, path, body=..., ok_status=..., resource_params=(...))`. The path is exactly as FastAPI declares it. `body` must be valid, so the probe reaches the tenant check and the positive control succeeds.
+2. A new kind of resource in the path (e.g. `{kb_id}`): create one in organization A in `build_world` and add it to `resources_a`.
+3. Not tenant-scoped (no organization in the path): add it to `NOT_TENANT_SCOPED` with the reason. Routes under `/orgs/{org_id}` can never be excused this way.
+
+Routes are discovered from the OpenAPI schema; `include_in_schema=False` under `app/` is forbidden by a test so nothing can hide from the registry.
