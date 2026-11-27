@@ -61,6 +61,7 @@ D:\Projects\Cortex\
 │   │   ├── dependencies/           # provider factories (storage, embedder, llm, reranker, qdrant)
 │   │   ├── workers/                # celery_app.py, tasks/ (ingest, delete, reconcile), task base with retry policy
 │   │   ├── storage/                # StorageBackend protocol, local.py, s3.py
+│   │   ├── uploads/                # streaming multipart intake, type detection from bytes, filenames
 │   │   ├── rag/
 │   │   │   ├── ingestion/          # parsers (pdf, docx, txt, md), cleaner, pipeline orchestration
 │   │   │   ├── chunking/           # structure-aware token splitter

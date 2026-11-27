@@ -9,6 +9,7 @@
 | Env / deps | uv + `pyproject.toml` + `uv.lock` | Reproducible, fast (ADR-003). |
 | Web framework | FastAPI | Async, Pydantic-native, OpenAPI out of the box. |
 | Validation / settings | Pydantic v2, pydantic-settings | Schemas + typed env config. |
+| Upload parsing | python-multipart (push parser) | FastAPI's own multipart library, used directly so limits apply while the body streams in (ADR-023). |
 | ORM / migrations | SQLAlchemy 2.1 (async; 2.0-style API) + Alembic | Typed ORM, explicit transactions, reviewed migrations. |
 | DB driver | psycopg 3 | One driver for async (API) and sync (Alembic/tools). |
 | Auth | PyJWT, pwdlib[argon2] | Minimal, well-understood primitives. |

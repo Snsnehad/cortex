@@ -143,7 +143,7 @@ stateDiagram-v2
 | G-7 | No security response headers (HSTS, CSP …), no trusted-host check or request-body cap, and API docs are served | Missing browser and transport hardening | **Planned:** TASK-15.03 |
 | G-8 | One JWT signing key, no key id; rotating it signs everyone out | Rotation is disruptive, not unsafe | Accepted |
 | G-9 | No email verification, MFA, password reset or audit log | Account recovery and accountability are limited | Not in the current plan (SSO/OAuth is explicitly out of scope) |
-| G-10 | Uploads, prompt injection and LLM output | Not built yet | **Planned:** Phases 4–10, reviewed in TASK-15.04 |
+| G-10 | File parsing, prompt injection and LLM output | Upload intake is hardened (streamed limits, type from bytes, macro/encrypted/zip-bomb refusal, sanitized names: ADR-023, TASK-04.03); parsing and generation are not built yet | **Planned:** Phases 6–10, reviewed in TASK-15.04 |
 
 ## 10. Keeping this document true
 

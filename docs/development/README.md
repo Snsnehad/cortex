@@ -505,3 +505,28 @@ Routes: `app/api/v1/knowledge_bases.py`. Rules: `app/services/knowledge_bases.py
 - `embedding_profile` comes from `settings.embeddings.profile` at creation and never changes (a different model means a reindex, ADR-008).
 - Stats (`KnowledgeBaseRepository.stats`) take a list of ids and run one grouped query; use it for pages, never call it per item. `DELETING` documents are not counted.
 - Soft delete sets `deleted_at` with one conditional UPDATE. The Phase 5 cleanup job will remove the documents, vectors and files of KBs with `deleted_at` set.
+
+## Upload intake (TASK-04.03, ADR-023)
+
+Code: `app/uploads/`. **Do not use FastAPI's `UploadFile` for document uploads**: it receives the whole body before your code runs. Use:
+
+```python
+upload = await receive_upload(request, max_bytes=settings.storage.max_upload_bytes)
+try:
+    detected = await detect_upload(upload)      # DetectedType(mime_type, kind)
+    # upload.file (spooled, at position 0), upload.size_bytes, upload.sha256, upload.filename
+finally:
+    upload.close()
+```
+
+| Check | Where | Error |
+|---|---|---|
+| multipart/form-data with a boundary; exactly one part named `file` with a filename | `receive.py` | 400 `INVALID_UPLOAD` |
+| declared `Content-Length` > limit + 64 KiB (before reading) | `receive.py` | 413 `FILE_TOO_LARGE` |
+| file bytes > limit (while streaming); whole body > limit + 64 KiB | `receive.py` | 413 `FILE_TOO_LARGE` |
+| empty file | `detect.py` | 422 `FILE_EMPTY` |
+| not PDF / DOCX / UTF-8 text (with a `details.reason`) | `detect.py` | 415 `UNSUPPORTED_FILE_TYPE` |
+
+- `upload.filename` is already sanitized for display. It is never used in a path or storage key.
+- `detect_file_type` is synchronous (it may read the whole file for the UTF-8 check): `detect_upload` runs it in a worker thread.
+- Tests: `tests/unit/test_upload_detect.py` shows how to craft DOCX/ZIP variants; `tests/unit/test_upload_receive.py` shows how to prove a limit acts before the body is read (`CountingBody`).
