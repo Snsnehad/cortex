@@ -175,6 +175,9 @@ class WorkerSettings(BaseModel):
     # acknowledged only when it finishes, so this must exceed the longest possible run, or a
     # slow but healthy task would be delivered to a second worker while still running.
     visibility_timeout_seconds: int = Field(default=3600, ge=60)
+    # A RUNNING job's lease. The worker renews it while working (heartbeat); a lease that
+    # runs out means the worker died, and the reconciler (TASK-05.04) takes the job back.
+    job_lease_seconds: int = Field(default=300, ge=30)
 
     @model_validator(mode="after")
     def _check_limits(self) -> Self:

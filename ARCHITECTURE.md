@@ -176,7 +176,7 @@ sequenceDiagram
 | Concern | Mechanism |
 |---|---|
 | Large files never processed in request | API only stores + enqueues; returns 202. |
-| Duplicate work / double delivery | Job claim is a conditional `UPDATE ... RETURNING` (only one worker wins). `acks_late=True` + idempotent steps make redelivery safe. |
+| Duplicate work / double delivery | Job claim is a conditional `UPDATE ... RETURNING` (only one worker wins). The claim returns the new `attempts` value as a **fencing token**: every later write requires `status = RUNNING AND attempts = token`, so a stalled worker whose lease expired cannot overwrite the new holder's result. `acks_late=True` + idempotent steps make redelivery safe. |
 | Duplicate vectors | Chunk UUIDs are deterministic: `uuid5(document_id, f"{embedding_profile}:{chunk_index}")`, used as Qdrant point ids → re-runs overwrite. Stale points from a previous run with more chunks are deleted by filter `document_id = X AND chunk_index >= new_count`. |
 | Enqueue lost after commit (Redis down) | Job stays `QUEUED`; beat reconciler re-enqueues jobs `QUEUED` older than N minutes. |
 | Worker crash mid-job | Lease (`lease_expires_at`); reconciler returns expired `RUNNING` jobs to `RETRYING` until `max_attempts`, then `FAILED`. |

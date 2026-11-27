@@ -587,3 +587,19 @@ async def _something(ctx: WorkerContext, job_id: uuid.UUID) -> None:
 - Settings: `CORTEX_WORKER__*` (broker on Redis **db 1**, apart from rate limits on db 0; soft/hard time limits; visibility timeout, which must exceed the hard limit).
 - Every log line inside a task carries `task_id` and `task_name`; `task.started` / `task.finished` (with `state` and `duration_ms`) bracket each run.
 - Tests: run tasks eagerly with `app.tasks[name].apply()` in **synchronous** tests (`tests/integration/test_worker.py`); `start_worker(app, pool="solo", queues=[unique])` runs a real worker thread against the compose Redis.
+
+## Processing jobs (TASK-05.02)
+
+`JobService(session, lease_seconds=settings.worker.job_lease_seconds)` in `app/services/jobs.py`:
+
+```python
+claim = await jobs.claim(job_id)          # None → not ours (taken, finished, cancelled): exit quietly
+...                                       # work; call `await jobs.heartbeat(claim, stage=JobStage.EMBEDDING)`
+                                          # well within the lease; False → we lost the job: stop, write nothing
+await jobs.succeed(claim, metrics={...})  # or: await jobs.fail(claim, error_code=..., error_message=..., retryable=...)
+```
+
+- **Never read a job's status and then update it.** Every transition is one conditional `UPDATE … RETURNING` in `JobRepository`; its `WHERE` clause is the state machine (`TRANSITIONS` documents it, and a test checks every state × operation).
+- `claim.attempt` is a **fencing token**: writes require `status = RUNNING AND attempts = claim.attempt`.
+- `fail(retryable=True)` becomes `RETRYING` only while attempts remain (decided in the same UPDATE), otherwise `FAILED`. Error messages are cut to 1000 characters; never put document text in them.
+- For INGEST jobs the document follows: PROCESSING on claim, READY on success, FAILED on final failure; a `DELETING` document is never overwritten.
