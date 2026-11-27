@@ -19,6 +19,7 @@ from app.api.v1.router import api_router
 from app.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.pagination import CursorCodec
+from app.core.passwords import PasswordHasher
 from app.core.tokens import AccessTokenService
 from app.database.session import create_engine, create_session_factory
 from app.middleware.request_context import RequestContextMiddleware
@@ -59,6 +60,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(app.state.db_engine)
     # Signs pagination cursors; key derived from the JWT secret (never used directly).
     app.state.cursor_codec = CursorCodec(settings.auth.jwt_secret.get_secret_value().encode())
+    # One hasher per process (it caches the dummy hash used for unknown-email logins).
+    app.state.password_hasher = PasswordHasher()
     # Issues and verifies access tokens; its own derived key.
     app.state.access_tokens = AccessTokenService(
         settings.auth.jwt_secret.get_secret_value(),

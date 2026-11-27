@@ -396,3 +396,22 @@ claims = tokens.verify(bearer_token)       # AccessTokenClaims(user_id, token_id
 **Frontend contract:** never send two refreshes with the same token concurrently (single-flight). The second would count as reuse and sign the user out (ADR-022, by design).
 
 **Verified by mutation tests:** disabling reuse detection fails 5 tests; dropping the commit before the reuse error (the revocation would roll back silently) fails 2.
+
+## Auth endpoints (TASK-03.04)
+
+Contract: [API_SPECIFICATION.md](../../API_SPECIFICATION.md) (Authentication). Code: `app/api/v1/auth.py` (routes), `app/services/auth.py` (rules), `app/dependencies/auth.py` (`CurrentUser`, `AuthServiceDep`).
+
+```python
+from app.dependencies.auth import CurrentUser
+
+@router.get("/something")
+async def something(user: CurrentUser) -> ...:   # 401 unless a valid Bearer token for an active user
+```
+
+**Try it in Swagger UI** (`scripts\dev.cmd api`, then http://127.0.0.1:8000/api/v1/docs): call `POST /auth/register`, copy `access_token`, click **Authorize**, paste it, then call `GET /auth/me`. The browser keeps the refresh cookie automatically. `POST /auth/refresh` needs the header `X-Requested-With: cortex`.
+
+Security behaviour (all tested, two by mutation):
+- Login: unknown email, wrong password and deactivated account give the same 401, in the same time (measured without the dummy verify: 12.8 ms vs 56.8 ms, an account-discovery leak).
+- `CurrentUser` re-checks the database on every request: a deactivated user is locked out immediately, not when the token expires.
+- Registration is atomic and race-safe (3 concurrent identical sign-ups → one 201, two 409, nothing left behind).
+- The refresh cookie only travels to `/api/v1/auth/*` (verified with curl's cookie jar against a real server).

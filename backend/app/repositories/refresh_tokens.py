@@ -16,6 +16,11 @@ class RefreshTokenRepository:
     def add(self, token: RefreshToken) -> None:
         self._session.add(token)
 
+    async def get_by_hash(self, token_hash: str) -> RefreshToken | None:
+        return await self._session.scalar(
+            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        )
+
     async def get_by_hash_for_update(self, token_hash: str) -> RefreshToken | None:
         """Lock the row until the transaction ends.
 

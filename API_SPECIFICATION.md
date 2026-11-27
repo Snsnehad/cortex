@@ -51,13 +51,13 @@ The "member may upload" default is a product decision recorded in DECISIONS.md (
 ### Authentication
 | Method | Path | Body | Response | Notes |
 |---|---|---|---|---|
-| POST | `/auth/register` | `{email, password, full_name, organization_name?}` | 201 `{user, organization, access_token, expires_in}` + refresh cookie | Creates user + an organization where the user is OWNER. Password policy: ≥12 chars, not equal to email. Rate limited per IP. Duplicate email → 409 `EMAIL_TAKEN`. |
-| POST | `/auth/login` | `{email, password}` | 200 `{access_token, token_type, expires_in}` + refresh cookie | Constant-time failure path; generic `INVALID_CREDENTIALS`. Rate limited per IP and per email. |
-| POST | `/auth/refresh` | — (cookie) | 200 `{access_token, expires_in}` + rotated cookie | Requires header `X-Requested-With: cortex` (CSRF guard). Reuse of rotated token → 401 + family revoked. |
-| POST | `/auth/logout` | — (cookie) | 204 | Revokes the token family, clears cookie. |
-| GET | `/auth/me` | — | 200 `{user, memberships: [{organization, role}]}` | |
-| PATCH | `/auth/me` | `{full_name?}` | 200 user | Account settings. |
-| POST | `/auth/me/password` | `{current_password, new_password}` | 204 | Revokes all other refresh-token families. |
+| POST | `/auth/register` | `{email, password, full_name, organization_name?}` | 201 `{user, organization, access_token, token_type, expires_in}` + refresh cookie | Creates user + organization + OWNER membership in one transaction (default org name "<full_name>'s workspace"; slug made unique with a 6-hex suffix). Password policy (ADR-021) → 422 `PASSWORD_POLICY`. Duplicate email (any case, race-safe) → 409 `EMAIL_TAKEN`. Rate limited per IP (TASK-03.07). |
+| POST | `/auth/login` | `{email, password}` | 200 `{access_token, token_type, expires_in}` + refresh cookie | Unknown email, wrong password and deactivated account all → 401 `INVALID_CREDENTIALS` with identical message and timing. Upgrades outdated password hashes. Rate limited (TASK-03.07). |
+| POST | `/auth/refresh` | — (cookie) | 200 `{access_token, token_type, expires_in}` + rotated cookie | Requires header `X-Requested-With: cortex`, otherwise 403 `CSRF_CHECK_FAILED`. No/unknown/reused token → 401 `INVALID_REFRESH_TOKEN` (reuse revokes the whole family, ADR-022); expired → 401 `REFRESH_TOKEN_EXPIRED`. |
+| POST | `/auth/logout` | — (cookie) | 204 | Revokes the token family and clears the cookie. Idempotent; works without a cookie. |
+| GET | `/auth/me` | — | 200 `{user, memberships: [{organization, role}]}` | 401 `UNAUTHENTICATED` (no token), `TOKEN_EXPIRED`, or `INVALID_TOKEN` (bad token, or user deleted/deactivated since issue). |
+| PATCH | `/auth/me` | `{full_name}` | 200 `{user, memberships}` | Account settings. |
+| POST | `/auth/me/password` | `{current_password, new_password}` | 204 | Wrong current password → 422 `INVALID_CURRENT_PASSWORD` (field `current_password`); new password checked against the policy. Revokes all *other* sessions; the session sending its refresh cookie stays signed in. |
 
 ### Organizations & members
 | Method | Path | Role | Description |
