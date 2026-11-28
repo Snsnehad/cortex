@@ -178,6 +178,11 @@ class WorkerSettings(BaseModel):
     # A RUNNING job's lease. The worker renews it while working (heartbeat); a lease that
     # runs out means the worker died, and the reconciler (TASK-05.04) takes the job back.
     job_lease_seconds: int = Field(default=300, ge=30)
+    # Retry delay after a transient failure: random between 0 and
+    # min(max, base * 2 ** (attempt - 1)) ("full jitter"), so retries of many jobs that
+    # failed together (e.g. an LLM outage) spread out instead of arriving in waves.
+    retry_backoff_base_seconds: int = Field(default=10, ge=1)
+    retry_backoff_max_seconds: int = Field(default=600, ge=1)
 
     @model_validator(mode="after")
     def _check_limits(self) -> Self:

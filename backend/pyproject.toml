@@ -65,6 +65,7 @@ select = [
 "tests/**" = [
     "S101",     # assert is how pytest works
     "S105", "S106",  # hard-coded test passwords/tokens are fine in tests
+    "S311",     # seeded random.Random makes randomized code reproducible in tests
 ]
 
 [tool.ruff.lint.isort]

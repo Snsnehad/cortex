@@ -603,3 +603,27 @@ await jobs.succeed(claim, metrics={...})  # or: await jobs.fail(claim, error_cod
 - `claim.attempt` is a **fencing token**: writes require `status = RUNNING AND attempts = claim.attempt`.
 - `fail(retryable=True)` becomes `RETRYING` only while attempts remain (decided in the same UPDATE), otherwise `FAILED`. Error messages are cut to 1000 characters; never put document text in them.
 - For INGEST jobs the document follows: PROCESSING on claim, READY on success, FAILED on final failure; a `DELETING` document is never overwritten.
+
+## Job tasks: retries and errors (TASK-05.03)
+
+Every job task has the same body (`app/workers/base.py`):
+
+```python
+@shared_task(bind=True, name="cortex.ingest_document")
+def ingest_document(self, job_id: str) -> str:
+    return execute_job_task(self, job_id, _ingest)
+
+async def _ingest(run: JobRun) -> dict[str, Any] | None:   # returns metrics for the job row
+    await run.heartbeat(JobStage.EXTRACTING)                # renews the lease; raises JobLostError if taken back
+    ...
+```
+
+| Raise | Meaning | Result |
+|---|---|---|
+| `TransientError(code, message)` | worth retrying (timeouts, 5xx, rate limits) | `RETRYING`, re-enqueued after `uniform(0, min(max, base·2^(attempt−1)))` s; `FAILED` on the last attempt |
+| `PermanentError(code, message)` | retrying cannot help (encrypted, corrupt, unsupported) | `FAILED` now; the message is shown to users: no document text |
+| `SoftTimeLimitExceeded` | ran too long | retried as `TIME_LIMIT_EXCEEDED` |
+| anything else | a bug or unforeseen failure | retried as `INTERNAL_ERROR`; traceback logged once; its text is **never** stored |
+
+- `run.heartbeat()` raising `JobLostError` means the job is someone else's now: let it propagate; nothing is written and it is logged as a warning, not an error.
+- Attempts are counted on the job row, never by Celery's retry counter.
