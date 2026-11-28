@@ -673,3 +673,12 @@ scripts\dev.cmd workers down
 | damaged, not a PDF | `PDF_INVALID`; a single bad page is skipped and counted instead |
 
 Tests build their PDFs with pypdf (`tests/unit/test_pdf_parser.py: make_pdf`); give fonts an `/Encoding` (WinAnsi), as real PDFs do.
+
+### Word documents (TASK-06.02)
+
+`DocxParser` streams `word/document.xml` with `XMLPullParser` (no python-docx: it would load every part, images included, into memory). Every archive entry is read through `archive.LimitedReader`, which counts the bytes actually decompressed (cap: 64 MiB for `document.xml`, 8 MiB for `styles.xml`) → `ARCHIVE_TOO_LARGE`. An XML `DOCTYPE` is refused (`DOCX_INVALID`).
+
+- Headings: paragraph styles named "Heading N", or an outline level on the style or the paragraph (level 9 = body text). Each heading starts a block whose `heading_path` is the chain of open headings; the heading line is the block's first line.
+- Tables: one line per row, cells joined with " | "; nested tables flattened into their cell.
+- Not extracted: tracked deletions, field codes, headers/footers, footnotes, comments, images.
+- Tests build documents from raw WordprocessingML (`tests/unit/test_docx_parser.py`), including a zip bomb and a memory check with `tracemalloc`.

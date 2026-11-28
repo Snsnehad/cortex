@@ -3,7 +3,7 @@
 > Source of truth for **status**. Definitions and completion conditions live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 > A task is `COMPLETED` only when: implementation finished, relevant tests **executed and passing**, acceptance criteria met, docs updated.
 > Statuses: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `COMPLETED` · `NEEDS_REVIEW`
-> Last updated: 2026-11-28 (Session 2, after TASK-06.01)
+> Last updated: 2026-11-28 (Session 2, after TASK-06.02)
 
 ## Summary
 
@@ -15,7 +15,7 @@
 | PHASE-03 | Auth & multi-tenancy | COMPLETED | 9 / 9 |
 | PHASE-04 | Upload & storage | COMPLETED | 6 / 6 |
 | PHASE-05 | Background processing | COMPLETED | 6 / 6 |
-| PHASE-06 | Extraction & chunking | IN_PROGRESS | 1 / 7 |
+| PHASE-06 | Extraction & chunking | IN_PROGRESS | 2 / 7 |
 | PHASE-07 | Embeddings & Qdrant | NOT_STARTED | 0 / 7 (+1 stretch) |
 | PHASE-08 | Dense & sparse retrieval | NOT_STARTED | 0 / 5 |
 | PHASE-09 | Hybrid & reranking | NOT_STARTED | 0 / 4 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-06.02 — DOCX parser: paragraphs, headings → section path, tables → row text; real decompression limits (zip-bomb guard on actual bytes, not only declared sizes).
-**Next task:** TASK-06.03 (TXT/MD parser; first resolve the encoding question: intake accepts UTF-8 only, ADR-023).
+**Current task:** TASK-06.03 — TXT/Markdown parser (Markdown heading paths, code blocks intact). **Needs the owner's decision first:** the plan expects UTF-16/cp1252 text, but intake accepts UTF-8 only (ADR-023).
+**Next task:** TASK-06.04 (cleaner with an offset map).
 
 ## Known blockers
 
@@ -126,7 +126,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
 | TASK-06.01 | PDF parser | COMPLETED | 05.03 | app/rag/ingestion/parsed.py (TextBlock with page / heading_path, ParsedDocument, Parser protocol, ExtractionError), app/rag/ingestion/pdf.py (PdfParser: per-page blocks, empty-password decryption, PDF_ENCRYPTED / PDF_INVALID / EXTRACTION_EMPTY with scan detection, failed pages tolerated and counted), pyproject.toml/uv.lock (pypdf[crypto] 7.2.0), DECISIONS.md (ADR-009 note), TECH_STACK.md, docs/development/README.md | tests/unit/test_pdf_parser.py (20; PDFs generated at test time with pypdf, no binary fixtures) | ruff · mypy · pytest 906 passed, 1 skipped · one block per page with page numbers; blank pages skipped, numbering kept · two columns come out column by column (layout mode would interleave: mutant killed) · WinAnsi characters (é, %, parentheses) survive · real password (RC4-128, AES-128, AES-256) → PDF_ENCRYPTED; empty user password (all three) opens · image-only → EXTRACTION_EMPTY mentioning OCR; no text, no images → EXTRACTION_EMPTY; partly scanned keeps its text pages · garbage/empty/not-PDF → PDF_INVALID · one failing page skipped and counted; all failing → PDF_INVALID · messages never contain document text · mutations: 8 of 9 killed; the survivor showed `file.seek(0)` is redundant (pypdf positions the stream itself), so it was removed | `cryptography` was only a dev dependency (via moto); without it in production, AES PDFs with an empty password (common: print/copy restrictions only) would have been wrongly refused, hence `pypdf[crypto]`. Page/character limits are TASK-06.07. Open question for 06.03: the plan expects UTF-16/cp1252 text, but intake accepts UTF-8 only (ADR-023). |
-| TASK-06.02 | DOCX parser + zip-bomb guard | NOT_STARTED | 06.01 | | | | |
+| TASK-06.02 | DOCX parser + zip-bomb guard | COMPLETED | 06.01 | app/rag/ingestion/archive.py (LimitedReader: caps bytes actually decompressed; encrypted entries refused), app/rag/ingestion/docx.py (DocxParser: streaming XMLPullParser over document.xml/styles.xml; headings from style names or outline levels → heading_path; tables one line per row; deleted text/field codes skipped; DOCTYPE refused; DOCX_INVALID / ARCHIVE_TOO_LARGE / EXTRACTION_EMPTY), DECISIONS.md (ADR-009 and ADR-023 notes), TECH_STACK.md, docs | tests/unit/test_docx_parser.py (21; documents built from raw WordprocessingML at test time) | ruff · mypy · pytest 927 passed, 1 skipped · heading paths incl. popping back to a higher level · outline levels on styles and paragraphs; level 9 = body text · character/unknown styles not headings · no styles part · heading-only sections kept · tabs, breaks, non-breaking hyphens · tracked deletions and field codes skipped, insertions kept · content controls read · text box read once · tables: rows with " | ", empty rows skipped, nested table flattened · empty → EXTRACTION_EMPTY · not a zip / truncated / malformed XML / no document.xml / DOCTYPE (billion laughs) / encrypted entry → DOCX_INVALID · **zip bomb** (20 MB of XML in < 200 KB) → ARCHIVE_TOO_LARGE with peak memory < 8 MiB · **memory flat**: 50,000 paragraphs → peak < 12 MiB (measured 5.8; 22.6 without discarding) · mutations, all 11 killed ("never clear the parsed body" first survived; measured both ways and added the memory test) | Deliberate deviation from TECH_STACK: no python-docx (it loads the whole package incl. images into memory); recorded in ADR-009. Headers, footers, footnotes and comments are not extracted (could be added later). |
 | TASK-06.03 | TXT/MD parser | NOT_STARTED | 06.01 | | | | |
 | TASK-06.04 | Text cleaner with offset map | NOT_STARTED | 06.01 | | | | |
 | TASK-06.05 | Structure-aware chunker | NOT_STARTED | 06.04 | | | | |

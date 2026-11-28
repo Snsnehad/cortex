@@ -11,6 +11,7 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 - 2026-11-27 — Local storage: temporary files now live in `<root>/.tmp/`, so real document paths stay under Windows' 260-character limit [TASK-04.04].
 
 ### Added
+- 2026-11-28 — Word (.docx) text extraction: headings become section paths, tables become readable rows, tracked deletions and field codes are left out; memory stays flat for long documents and zip bombs are stopped by counting the bytes actually unpacked (`DOCX_INVALID`, `ARCHIVE_TOO_LARGE`, `EXTRACTION_EMPTY`) [TASK-06.02].
 - 2026-11-28 — PDF text extraction: text per page with page numbers, PDFs that only restrict printing/copying open normally, password-protected PDFs and scans without text are refused with clear codes (`PDF_ENCRYPTED`, `EXTRACTION_EMPTY`, `PDF_INVALID`); not yet connected to the processing job (TASK-06.06) [TASK-06.01].
 - 2026-11-28 — Background worker and scheduler as opt-in Docker services (`scripts\dev.cmd workers up | down | logs`): never started by default, memory-limited (about 190 MiB together in use), hardened like the API, with a graceful shutdown that requeues unfinished work [TASK-05.06].
 - 2026-11-28 — Reprocess and delete documents: any member can reprocess a document (refused while it is being processed); the uploader or an admin can delete it, which hides it at once and removes its file and records in the background, safely repeatable; deleting a knowledge base now deletes its documents the same way and finally removes the knowledge base itself [TASK-05.05].

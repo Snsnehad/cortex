@@ -30,7 +30,7 @@
 | Reranker | `Xenova/ms-marco-MiniLM-L-6-v2` cross-encoder | Small, fast cross-encoder. |
 | LLM / remote embeddings | `openai` SDK pointed at any OpenAI-compatible `base_url` | Provider-agnostic. |
 | Tokenizer (budgets) | tiktoken | Fast token counting for chunk sizing and context budgets. |
-| Parsing | pypdf (with its `crypto` extra), python-docx, charset-normalizer | Permissive licences (ADR-009). `crypto`: AES PDFs with an empty password. |
+| Parsing | pypdf (with its `crypto` extra); DOCX with the standard library (`zipfile` + streaming XML), not python-docx; charset-normalizer | Permissive licences (ADR-009). `crypto`: AES PDFs with an empty password. DOCX streaming keeps memory flat and caps real decompressed bytes. |
 | RAG framework | **none** (no LangChain/LlamaIndex) | Requirement: implement and understand the retrieval flow. |
 
 ## Data & infrastructure
