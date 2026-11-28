@@ -39,6 +39,7 @@ from app.config.settings import WorkerSettings
 from app.core.logging import get_logger
 from app.models import JobStage, JobStatus
 from app.services.jobs import Claim, JobService
+from app.storage import StorageBackend
 from app.workers.runtime import WorkerContext, run_async
 
 logger = get_logger("cortex.worker")
@@ -97,14 +98,33 @@ def backoff_seconds(
 
 
 class JobRun:
-    """What the work function gets: the claim, and a heartbeat that also reports progress."""
+    """What the work function gets: the claim, a heartbeat that also reports progress, a
+    session factory and the file storage."""
 
     def __init__(
-        self, claim: Claim, factory: async_sessionmaker[AsyncSession], lease_seconds: int
+        self,
+        claim: Claim,
+        factory: async_sessionmaker[AsyncSession],
+        lease_seconds: int,
+        storage: StorageBackend | None = None,
     ) -> None:
         self.claim = claim
+        self.session_factory = factory
         self._factory = factory
         self._lease_seconds = lease_seconds
+        self._storage = storage
+        self.removed_with_document = False
+
+    @property
+    def storage(self) -> StorageBackend:
+        if self._storage is None:
+            raise RuntimeError("this job run has no storage")
+        return self._storage
+
+    def mark_removed_with_document(self) -> None:
+        """The work deleted the document row, and with it (ON DELETE CASCADE) this job's
+        row: there is nothing left to mark SUCCEEDED, and that is the success."""
+        self.removed_with_document = True
 
     async def heartbeat(self, stage: JobStage | None = None) -> None:
         """Renew the lease; call it well within the lease. Raises JobLostError if the job
@@ -127,6 +147,7 @@ async def run_job(
     factory: async_sessionmaker[AsyncSession],
     settings: WorkerSettings,
     rng: random.Random | None = None,
+    storage: StorageBackend | None = None,
 ) -> JobResult:
     """Claim ``job_id``, run ``work``, and record the outcome. Never raises for job
     failures; the returned ``JobResult`` tells the caller whether to re-enqueue."""
@@ -153,7 +174,7 @@ async def run_job(
             return JobResult(Outcome.RETRY, retry_in_seconds=delay, error_code=code)
         return JobResult(Outcome.FAILED, error_code=code)
 
-    run = JobRun(claim, factory, settings.job_lease_seconds)
+    run = JobRun(claim, factory, settings.job_lease_seconds, storage)
     try:
         metrics = await work(run)
     except JobLostError:
@@ -175,6 +196,9 @@ async def run_job(
             INTERNAL_ERROR, "An unexpected error occurred while processing.", retryable=True
         )
 
+    if run.removed_with_document:
+        logger.info("job.removed_with_document", job_id=str(job_id))
+        return JobResult(Outcome.SUCCEEDED)
     async with factory() as session:
         succeeded = await jobs(session).succeed(held, metrics=metrics)
     return JobResult(Outcome.SUCCEEDED if succeeded else Outcome.LOST)
@@ -182,7 +206,11 @@ async def run_job(
 
 async def _run_in_worker(context: WorkerContext, job_id: uuid.UUID, work: Work) -> JobResult:
     return await run_job(
-        job_id, work, factory=context.session_factory, settings=context.settings.worker
+        job_id,
+        work,
+        factory=context.session_factory,
+        settings=context.settings.worker,
+        storage=context.storage,
     )
 
 

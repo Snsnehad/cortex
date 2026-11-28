@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.database.session import create_engine, create_session_factory
+from app.storage import StorageBackend, create_storage
 
 logger = get_logger("cortex.worker")
 
@@ -44,6 +45,7 @@ class WorkerContext:
     runner: asyncio.Runner
     engine: AsyncEngine
     session_factory: async_sessionmaker[AsyncSession]
+    storage: StorageBackend
 
 
 _settings: Settings | None = None
@@ -81,6 +83,7 @@ def get_context() -> WorkerContext:
             runner=runner,
             engine=engine,
             session_factory=create_session_factory(engine),
+            storage=create_storage(settings.storage),  # touches nothing until used
         )
         logger.info("worker.context_created", pid=pid)
     return _context
@@ -107,6 +110,7 @@ def shutdown() -> None:
     if context is None or context.pid != os.getpid():
         return
     try:
+        context.runner.run(context.storage.aclose())
         context.runner.run(context.engine.dispose())
     finally:
         context.runner.close()

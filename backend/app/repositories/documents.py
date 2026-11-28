@@ -106,3 +106,26 @@ class DocumentRepository:
             .limit(1)
         )
         return job
+
+    async def lock_visible(
+        self, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> Document | None:
+        """Like ``get_visible``, but locks the document row (FOR UPDATE) until the end of the
+        transaction: reprocess and delete of one document run one after the other."""
+        document: Document | None = await self._session.scalar(
+            select(Document)
+            .join(
+                KnowledgeBase,
+                (KnowledgeBase.id == Document.knowledge_base_id)
+                & (KnowledgeBase.organization_id == Document.organization_id),
+            )
+            .where(
+                Document.organization_id == organization_id,
+                Document.id == document_id,
+                Document.status != DocumentStatus.DELETING,
+                KnowledgeBase.deleted_at.is_(None),
+            )
+            .with_for_update(of=Document)
+            .execution_options(populate_existing=True)
+        )
+        return document

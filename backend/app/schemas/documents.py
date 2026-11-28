@@ -124,3 +124,20 @@ class DocumentStatusOut(BaseModel):
             error_code=document.error_code or (job.error_code if job else None),
             updated_at=max(document.updated_at, job.updated_at) if job else document.updated_at,
         )
+
+
+class DocumentDeleted(BaseModel):
+    """202 body: the document is invisible now; its file and rows are removed in the
+    background by ``job``."""
+
+    id: uuid.UUID
+    status: DocumentStatus
+    job: JobOut
+
+    @classmethod
+    def from_domain(cls, deleted: AddedDocument) -> "DocumentDeleted":
+        return cls(
+            id=deleted.document.id,
+            status=deleted.document.status,
+            job=JobOut.from_model(deleted.job),
+        )

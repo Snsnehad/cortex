@@ -1,5 +1,5 @@
 """/api/v1/orgs/{org_id}/.../documents: upload (TASK-04.05); list, get, status, download
-(TASK-04.06). Delete and reprocess come with the cleanup worker (TASK-05.05).
+(TASK-04.06); reprocess and delete (TASK-05.05).
 
 Reads show only *visible* documents: not ``DELETING`` and in a knowledge base that is not
 deleted. Anything else, including another organization's document, is 404
@@ -37,7 +37,13 @@ from app.dependencies.rate_limit import RateLimitsDep
 from app.dependencies.settings import SettingsDep
 from app.dependencies.storage import StorageDep
 from app.models import DocumentStatus
-from app.schemas.documents import DocumentAccepted, DocumentDetail, DocumentOut, DocumentStatusOut
+from app.schemas.documents import (
+    DocumentAccepted,
+    DocumentDeleted,
+    DocumentDetail,
+    DocumentOut,
+    DocumentStatusOut,
+)
 from app.schemas.pagination import Page
 from app.services.documents import DocumentService
 from app.storage.base import content_disposition
@@ -185,3 +191,39 @@ async def download_document(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.post(
+    "/documents/{document_id}/reprocess",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DocumentAccepted,
+)
+async def reprocess_document(
+    document_id: uuid.UUID,
+    ctx: OrgContextDep,
+    session: DbSession,
+    storage: StorageDep,
+    queue: JobQueueDep,
+) -> DocumentAccepted:
+    """Any member (ADR-010). 409 JOB_ALREADY_ACTIVE while the document is being processed."""
+    added = await DocumentService(session, storage).reprocess(ctx, document_id)
+    await to_thread.run_sync(queue.enqueue_ingest, added.job.id)  # after the commit
+    return DocumentAccepted.from_domain(added)
+
+
+@router.delete(
+    "/documents/{document_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DocumentDeleted,
+)
+async def delete_document(
+    document_id: uuid.UUID,
+    ctx: OrgContextDep,
+    session: DbSession,
+    storage: StorageDep,
+    queue: JobQueueDep,
+) -> DocumentDeleted:
+    """The uploader or an ADMIN+ (ADR-010). Invisible at once; removed in the background."""
+    deleted = await DocumentService(session, storage).delete(ctx, document_id)
+    await to_thread.run_sync(queue.enqueue, deleted.job.id, deleted.job.job_type)
+    return DocumentDeleted.from_domain(deleted)

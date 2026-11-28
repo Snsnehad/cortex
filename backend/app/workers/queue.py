@@ -27,9 +27,13 @@ from app.models import JobType
 logger = get_logger("cortex.queue")
 
 INGEST_TASK = "cortex.ingest_document"
+DELETE_TASK = "cortex.delete_document"
 RECONCILE_TASK = "cortex.reconcile_jobs"
-# Which task processes which kind of job (REINDEX and DELETE arrive with their tasks).
-TASK_FOR_JOB_TYPE: dict[JobType, str] = {JobType.INGEST: INGEST_TASK}
+# Which task processes which kind of job (REINDEX arrives with its task).
+TASK_FOR_JOB_TYPE: dict[JobType, str] = {
+    JobType.INGEST: INGEST_TASK,
+    JobType.DELETE: DELETE_TASK,
+}
 _BROKER_ERRORS = (OperationalError, RedisError, OSError, TimeoutError)
 
 

@@ -27,7 +27,8 @@ from app.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.core.pagination import CursorCodec, PageResult
 from app.core.tenancy import OrgContext
-from app.models import KnowledgeBase
+from app.models import Document, DocumentStatus, JobStatus, JobType, KnowledgeBase, ProcessingJob
+from app.repositories.jobs import JobRepository
 from app.repositories.knowledge_bases import KnowledgeBaseRepository, KnowledgeBaseStats
 from app.repositories.pagination import KeysetOrder, PageRequest, fetch_page
 
@@ -62,6 +63,12 @@ class KnowledgeBaseNameTakenError(ConflictError):
 class KnowledgeBaseWithStats:
     knowledge_base: KnowledgeBase
     stats: KnowledgeBaseStats
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedKnowledgeBase:
+    deleted_at: datetime
+    delete_job_ids: list[uuid.UUID]  # enqueue these after the commit
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,9 +202,14 @@ class KnowledgeBaseService:
             notices=[CHUNKING_NOTICE] if chunking_changed else [],
         )
 
-    async def delete(self, ctx: OrgContext, knowledge_base_id: uuid.UUID) -> datetime:
+    async def delete(self, ctx: OrgContext, knowledge_base_id: uuid.UUID) -> DeletedKnowledgeBase:
         """Soft delete. One conditional UPDATE, so of two simultaneous deletes exactly one
-        succeeds and the other gets 404 (as for any knowledge base that does not exist)."""
+        succeeds and the other gets 404 (as for any knowledge base that does not exist).
+
+        In the same transaction every live document of the knowledge base becomes DELETING,
+        their active jobs are cancelled and a DELETE job is queued for each; the caller
+        enqueues those after the commit. The knowledge base row itself is removed once its
+        last document is gone (the delete task, or the reconciler for an empty one)."""
         now = self._clock()
         deleted = await self._session.scalar(
             update(KnowledgeBase)
@@ -212,8 +224,33 @@ class KnowledgeBaseService:
         if deleted is None:
             await self._session.rollback()
             raise KnowledgeBaseNotFoundError
+        document_ids = list(
+            await self._session.scalars(
+                update(Document)
+                .where(
+                    Document.organization_id == ctx.organization_id,
+                    Document.knowledge_base_id == knowledge_base_id,
+                    Document.status != DocumentStatus.DELETING,
+                )
+                .values(status=DocumentStatus.DELETING)
+                .returning(Document.id)
+                .execution_options(synchronize_session=False)
+            )
+        )
+        jobs = JobRepository(self._session)
+        await jobs.cancel_active_for_documents(ctx.organization_id, document_ids)
+        delete_jobs = [
+            ProcessingJob(
+                organization_id=ctx.organization_id,
+                document_id=document_id,
+                job_type=JobType.DELETE,
+                status=JobStatus.QUEUED,
+            )
+            for document_id in document_ids
+        ]
+        self._session.add_all(delete_jobs)
         await self._session.commit()
-        return now
+        return DeletedKnowledgeBase(now, [job.id for job in delete_jobs])
 
     async def _get(self, ctx: OrgContext, knowledge_base_id: uuid.UUID) -> KnowledgeBase:
         knowledge_base = await self._repository.get_active(ctx.organization_id, knowledge_base_id)

@@ -81,7 +81,7 @@ All membership changes lock the organization row and re-read the actor's current
 | GET | `/orgs/{org_id}/knowledge-bases` | MEMBER | Paginated, newest first. Each item includes `stats`. |
 | GET | `/orgs/{org_id}/knowledge-bases/{kb_id}` | MEMBER | KB + `stats: {document_count, documents_by_status{PENDING, PROCESSING, READY, FAILED}, total_bytes, chunk_count}` (documents being deleted are not counted). Unknown, deleted or another org's KB → 404 `KNOWLEDGE_BASE_NOT_FOUND`. |
 | PATCH | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | Any of `{name, description, chunk_size_tokens, chunk_overlap_tokens}`; only fields sent change; `description: null` clears it; `name: null` → 422. Response = KB + `notices[]`: a chunking change says it applies to new/reprocessed documents only. Same 409/422 rules as create. |
-| DELETE | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | **202** `{id, deleted_at}`. Soft delete: hidden from every read at once and its name is free again; documents, vectors and files are removed by a background job (Phase 5). Already deleted → 404. |
+| DELETE | `/orgs/{org_id}/knowledge-bases/{kb_id}` | ADMIN | **202** `{id, deleted_at}`. Soft delete: hidden from every read at once and its name is free again; in the same transaction every document becomes `DELETING` with a DELETE job each (enqueued after the commit). The knowledge base row is removed when its last document is gone. Already deleted → 404. |
 | POST | `/orgs/{org_id}/knowledge-bases/{kb_id}/reindex` | ADMIN | Stretch: migrate KB to a new embedding profile. |
 
 ### Documents
@@ -93,8 +93,8 @@ All membership changes lock the organization row and re-read the actor's current
 | GET | `/orgs/{org_id}/documents/{document_id}/status` | MEMBER | Lightweight poll: `{document_id, status, job_status, stage, attempts, max_attempts, error_code, updated_at}` from the document and its **newest** job. |
 | GET | `/orgs/{org_id}/documents/{document_id}/download` | MEMBER | S3: **302** to a presigned URL valid `CORTEX_STORAGE__PRESIGNED_URL_TTL_SECONDS` (default 300 s) whose response is forced to `attachment`. Local: **200** stream with the stored (detected) `Content-Type`, `Content-Disposition: attachment; filename=…; filename*=UTF-8''…`, `Content-Length`, `X-Content-Type-Options: nosniff`. Both: `Cache-Control: private, no-store`. A missing stored file fails as 500 before any byte is sent. |
 | GET | `/orgs/{org_id}/documents/{document_id}/chunks` | ADMIN | Paginated chunks (debug/inspection). |
-| POST | `/orgs/{org_id}/documents/{document_id}/reprocess` | MEMBER | 202; 409 `JOB_ALREADY_ACTIVE` if processing. |
-| DELETE | `/orgs/{org_id}/documents/{document_id}` | uploader or ADMIN | 202; hidden immediately, cleaned up asynchronously (TASK-05.05, with reprocess). |
+| POST | `/orgs/{org_id}/documents/{document_id}/reprocess` | MEMBER | **202** `{document, job}`: a new INGEST job `QUEUED`, the document back to `PENDING` with its error cleared, enqueued after the commit. 409 `JOB_ALREADY_ACTIVE` while a job is active (race-safe: one active job per document). Hidden/unknown document → 404 `DOCUMENT_NOT_FOUND`. |
+| DELETE | `/orgs/{org_id}/documents/{document_id}` | uploader or ADMIN | **202** `{id, status: DELETING, job}`. In one transaction the document becomes `DELETING` (invisible everywhere at once), its active job is cancelled and a DELETE job is queued; the worker removes the stored file, then the rows. Others → 403 `PERMISSION_DENIED`; already deleted → 404. The same file may be uploaded again immediately. |
 
 All document reads show only **visible** documents: not `DELETING`, in a knowledge base that is not deleted, in the caller's organization. Anything else is 404 `DOCUMENT_NOT_FOUND`.
 

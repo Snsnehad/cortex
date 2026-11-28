@@ -34,12 +34,13 @@ from anyio import CancelScope, to_thread
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.core.pagination import CursorCodec, PageResult
 from app.core.tenancy import OrgContext
-from app.models import Document, DocumentStatus, JobStatus, JobType, ProcessingJob
+from app.models import Document, DocumentStatus, JobStatus, JobType, OrgRole, ProcessingJob
 from app.repositories.documents import DocumentRepository
+from app.repositories.jobs import JobRepository
 from app.repositories.knowledge_bases import KnowledgeBaseRepository
 from app.repositories.pagination import KeysetOrder, PageRequest, fetch_page
 from app.services.knowledge_bases import KnowledgeBaseNotFoundError
@@ -50,6 +51,7 @@ from app.utils.ids import uuid7
 logger = get_logger("cortex.documents")
 
 DUPLICATE_INDEX = "uq_documents_kb_content_hash_active"
+ACTIVE_JOB_INDEX = "uq_processing_jobs_document_id_active"
 READ_CHUNK_BYTES = 1024 * 1024
 
 
@@ -89,6 +91,11 @@ class Download:
 
 
 NEWEST_FIRST = KeysetOrder(Document.created_at, Document.id, descending=True)
+
+
+class JobAlreadyActiveError(ConflictError):
+    default_code = "JOB_ALREADY_ACTIVE"
+    default_message = "This document is already being processed."
 
 
 class StoredContentMismatchError(RuntimeError):
@@ -294,6 +301,66 @@ class DocumentService:
         if document is None:
             raise DocumentNotFoundError
         return document
+
+    # --- reprocess and delete (TASK-05.05) ---------------------------------------------------
+
+    async def reprocess(self, ctx: OrgContext, document_id: uuid.UUID) -> AddedDocument:
+        """A new INGEST job (QUEUED) and the document back to PENDING, in one transaction.
+        One active job per document (partial unique index): a document being processed
+        answers 409 JOB_ALREADY_ACTIVE, also when two requests race."""
+        document = await self._documents.lock_visible(ctx.organization_id, document_id)
+        if document is None:
+            await self._session.rollback()
+            raise DocumentNotFoundError
+        document.status = DocumentStatus.PENDING
+        document.error_code = None
+        document.error_message = None
+        job = ProcessingJob(
+            organization_id=ctx.organization_id,
+            document_id=document.id,
+            job_type=JobType.INGEST,
+            status=JobStatus.QUEUED,
+        )
+        self._documents.add_job(job)
+        try:
+            await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            if _violated_constraint(exc) == ACTIVE_JOB_INDEX:
+                raise JobAlreadyActiveError from exc
+            raise
+        logger.info(
+            "document.reprocess_requested", document_id=str(document_id), job_id=str(job.id)
+        )
+        return AddedDocument(document, job)
+
+    async def delete(self, ctx: OrgContext, document_id: uuid.UUID) -> AddedDocument:
+        """Uploader or ADMIN+ (ADR-010). In one transaction: the document becomes DELETING
+        (invisible everywhere at once), its active job is cancelled (a worker holding it is
+        fenced out) and a DELETE job is queued; the worker removes file and rows."""
+        document = await self._documents.lock_visible(ctx.organization_id, document_id)
+        if document is None:
+            await self._session.rollback()
+            raise DocumentNotFoundError
+        if not (ctx.has_role(OrgRole.ADMIN) or document.uploaded_by_user_id == ctx.user_id):
+            await self._session.rollback()
+            raise PermissionDeniedError(
+                "Only the person who uploaded this document or an admin can delete it."
+            )
+        await JobRepository(self._session).cancel_active_for_documents(
+            ctx.organization_id, [document.id]
+        )
+        document.status = DocumentStatus.DELETING
+        job = ProcessingJob(
+            organization_id=ctx.organization_id,
+            document_id=document.id,
+            job_type=JobType.DELETE,
+            status=JobStatus.QUEUED,
+        )
+        self._documents.add_job(job)
+        await self._session.commit()
+        logger.info("document.delete_requested", document_id=str(document_id), job_id=str(job.id))
+        return AddedDocument(document, job)
 
 
 async def _started(chunks: AsyncGenerator[bytes]) -> AsyncGenerator[bytes]:

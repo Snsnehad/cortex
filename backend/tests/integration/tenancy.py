@@ -157,6 +157,19 @@ ISOLATION_CASES: list[IsolationCase] = [
     IsolationCase(
         "GET", f"{ORG_PREFIX}/documents/{{document_id}}/download", resource_params=("document_id",)
     ),
+    # --- reprocess and delete (TASK-05.05) ---
+    IsolationCase(
+        "POST",
+        f"{ORG_PREFIX}/documents/{{document_id}}/reprocess",
+        ok_status=202,
+        resource_params=("document_id",),
+    ),
+    IsolationCase(
+        "DELETE",
+        f"{ORG_PREFIX}/documents/{{document_id}}",
+        ok_status=202,
+        resource_params=("document_id",),
+    ),
 ]
 
 # Routes with no organization in the path, and why that is safe.

@@ -634,3 +634,10 @@ async def _ingest(run: JobRun) -> dict[str, Any] | None:   # returns metrics for
 - The API's Celery app is a producer with short broker timeouts (`CORTEX_WORKER__ENQUEUE_TIMEOUT_SECONDS`); do not reuse it in workers.
 - **Reconciler** (`cortex.reconcile_jobs`, beat every `CORTEX_WORKER__RECONCILE_INTERVAL_SECONDS`): expired RUNNING leases → RETRYING (enqueued at once) or FAILED `LEASE_EXPIRED`; QUEUED idle > `STALE_QUEUED_AFTER_SECONDS` and RETRYING idle > `STALE_RETRYING_AFTER_SECONDS` → re-enqueued and stamped. Safe to run any number of times, also concurrently.
 - **Tests:** API tests get an in-memory `RecordingJobQueue` (`app.state.job_queue`), so nothing is published to your Redis; call `reconcile(context, queue)` directly instead of running beat. A test that must use the real broker uses a unique queue and deletes every key matching it afterwards.
+
+## Reprocess and delete (TASK-05.05)
+
+- `DocumentService.reprocess` / `.delete` lock the document row (`lock_visible`, `FOR UPDATE`), so a reprocess and a delete of one document run one after the other. Reprocess relies on the one-active-job index for 409 `JOB_ALREADY_ACTIVE`.
+- Delete = `DELETING` + cancel active jobs + DELETE job, in one transaction; enqueue after the commit. A knowledge-base delete does the same for all its documents and returns the job ids to enqueue.
+- The delete task (`cortex.delete_document`) deletes the **file first, rows last** (rows keep the document invisible and retryable until everything else is gone), and the row delete is fenced by its claim. Phase 7 adds the Qdrant purge before the rows.
+- A work function that deletes its own job row (cascade) calls `run.mark_removed_with_document()`; `run_job` then reports SUCCEEDED instead of "lost".

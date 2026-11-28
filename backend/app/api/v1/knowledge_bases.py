@@ -7,12 +7,15 @@ through the verified ``OrgContext`` and ``(organization_id, id)``.
 import uuid
 from typing import Annotated
 
+from anyio import to_thread
 from fastapi import APIRouter, Depends, status
 
 from app.dependencies.database import DbSession
 from app.dependencies.orgs import AdminContext, OrgContextDep
 from app.dependencies.pagination import CursorCodecDep, PageParams
+from app.dependencies.queue import JobQueueDep
 from app.dependencies.settings import SettingsDep
+from app.models import JobType
 from app.schemas.knowledge_bases import (
     KnowledgeBaseCreate,
     KnowledgeBaseDeleted,
@@ -75,9 +78,11 @@ async def update_knowledge_base(
     "/{kb_id}", status_code=status.HTTP_202_ACCEPTED, response_model=KnowledgeBaseDeleted
 )
 async def delete_knowledge_base(
-    kb_id: uuid.UUID, ctx: AdminContext, service: KnowledgeBases
+    kb_id: uuid.UUID, ctx: AdminContext, service: KnowledgeBases, queue: JobQueueDep
 ) -> KnowledgeBaseDeleted:
-    # 202: the knowledge base is gone for users now; its documents, vectors and files are
-    # removed by a background job (Phase 5).
-    deleted_at = await service.delete(ctx, kb_id)
-    return KnowledgeBaseDeleted(id=kb_id, deleted_at=deleted_at)
+    # 202: the knowledge base is gone for users now; one DELETE job per document removes
+    # their files and rows in the background (enqueued after the commit).
+    deleted = await service.delete(ctx, kb_id)
+    for job_id in deleted.delete_job_ids:
+        await to_thread.run_sync(queue.enqueue, job_id, JobType.DELETE)
+    return KnowledgeBaseDeleted(id=kb_id, deleted_at=deleted.deleted_at)

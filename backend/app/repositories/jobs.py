@@ -15,7 +15,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import and_, case, exists, func, or_, select, update
+from sqlalchemy import and_, case, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -24,6 +24,8 @@ from app.models import (
     DocumentStatus,
     JobStage,
     JobStatus,
+    JobType,
+    KnowledgeBase,
     ProcessingJob,
 )
 
@@ -37,7 +39,8 @@ class JobRepository:
 
     async def claim(self, job_id: uuid.UUID, *, lease_seconds: int) -> ProcessingJob | None:
         """QUEUED/RETRYING → RUNNING, if attempts remain and the document is not being
-        deleted. Returns the claimed job, or None if it is not claimable (anymore)."""
+        deleted (DELETE jobs excepted: deleting it is their purpose). Returns the claimed
+        job, or None if it is not claimable (anymore)."""
         document_live = exists().where(
             Document.id == ProcessingJob.document_id,
             Document.organization_id == ProcessingJob.organization_id,
@@ -49,7 +52,7 @@ class JobRepository:
                 ProcessingJob.id == job_id,
                 ProcessingJob.status.in_(CLAIMABLE),
                 ProcessingJob.attempts < ProcessingJob.max_attempts,
-                document_live,
+                or_(ProcessingJob.job_type == JobType.DELETE, document_live),
             )
             .values(
                 status=JobStatus.RUNNING,
@@ -193,3 +196,73 @@ class JobRepository:
             .execution_options(populate_existing=True, synchronize_session=False)
         )
         return list(rows.all())
+
+    # --- deletion (TASK-05.05) -------------------------------------------------------------
+
+    async def cancel_active_for_documents(
+        self, organization_id: uuid.UUID, document_ids: list[uuid.UUID]
+    ) -> int:
+        """Cancel every active job of these documents (a worker holding one is fenced out:
+        its writes require status RUNNING)."""
+        if not document_ids:
+            return 0
+        result = await self._session.execute(
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.organization_id == organization_id,
+                ProcessingJob.document_id.in_(document_ids),
+                ProcessingJob.status.in_(ACTIVE_JOB_STATUSES),
+            )
+            .values(status=JobStatus.CANCELLED, finished_at=func.now(), lease_expires_at=None)
+            .execution_options(synchronize_session=False)
+        )
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    async def delete_document_if_held(
+        self, job_id: uuid.UUID, attempt: int, organization_id: uuid.UUID, document_id: uuid.UUID
+    ) -> bool:
+        """Remove a DELETING document's row (chunks and jobs go with it, ON DELETE CASCADE),
+        but only while the caller still holds the delete job (fencing)."""
+        held = exists().where(
+            ProcessingJob.id == job_id,
+            ProcessingJob.status == JobStatus.RUNNING,
+            ProcessingJob.attempts == attempt,
+        )
+        deleted = await self._session.scalar(
+            delete(Document)
+            .where(
+                Document.id == document_id,
+                Document.organization_id == organization_id,
+                Document.status == DocumentStatus.DELETING,
+                held,
+            )
+            .returning(Document.id)
+        )
+        return deleted is not None
+
+    async def delete_empty_deleted_knowledge_bases(
+        self,
+        *,
+        organization_id: uuid.UUID | None = None,
+        knowledge_base_id: uuid.UUID | None = None,
+        limit: int = 500,
+    ) -> int:
+        """Remove soft-deleted knowledge bases that have no documents left (the last step of
+        a knowledge base's deletion). Scoped to one KB, or a sweep over all of them."""
+        empty = ~exists().where(
+            Document.knowledge_base_id == KnowledgeBase.id,
+            Document.organization_id == KnowledgeBase.organization_id,
+        )
+        candidates = select(KnowledgeBase.id).where(KnowledgeBase.deleted_at.is_not(None), empty)
+        if knowledge_base_id is not None and organization_id is not None:
+            candidates = candidates.where(
+                KnowledgeBase.id == knowledge_base_id,
+                KnowledgeBase.organization_id == organization_id,
+            )
+        candidates = candidates.limit(limit).with_for_update(skip_locked=True)
+        rows = await self._session.scalars(
+            delete(KnowledgeBase)
+            .where(KnowledgeBase.id.in_(candidates), KnowledgeBase.deleted_at.is_not(None), empty)
+            .returning(KnowledgeBase.id)
+        )
+        return len(rows.all())

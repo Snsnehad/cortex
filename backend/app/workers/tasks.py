@@ -11,13 +11,27 @@ from typing import Any
 
 from anyio import to_thread
 from celery import Task, shared_task
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.logging import get_logger
-from app.models import JobStatus, JobType
+from app.models import Document, JobStatus, JobType
+from app.repositories.jobs import JobRepository
 from app.services.jobs import JobService
-from app.workers.base import JobRun, PermanentError, execute_job_task
-from app.workers.queue import INGEST_TASK, RECONCILE_TASK, CeleryJobQueue, JobQueue
+from app.storage import StorageUnavailableError
+from app.workers.base import (
+    JobLostError,
+    JobRun,
+    PermanentError,
+    TransientError,
+    execute_job_task,
+)
+from app.workers.queue import (
+    DELETE_TASK,
+    INGEST_TASK,
+    RECONCILE_TASK,
+    CeleryJobQueue,
+    JobQueue,
+)
 from app.workers.runtime import WorkerContext, run_async
 
 logger = get_logger("cortex.worker")
@@ -57,6 +71,54 @@ def ingest_document(self: Task[Any, Any], job_id: str) -> str:
     return execute_job_task(self, job_id, _ingest)
 
 
+# --- delete (TASK-05.05) ----------------------------------------------------------------------
+
+
+async def _delete_document(run: JobRun) -> None:
+    """Remove a DELETING document: its stored file, then its rows. Every step is idempotent,
+    so a retry after a crash simply repeats what is left.
+
+    Order matters: rows last. Until they are gone the document is still DELETING (invisible),
+    and the job can be retried; deleting the rows first would lose track of the file.
+    (Phase 7 adds the vector purge here, before the rows, so no search returns it.)"""
+    claim = run.claim
+    async with run.session_factory() as session:
+        document = await session.scalar(
+            select(Document).where(
+                Document.id == claim.document_id,
+                Document.organization_id == claim.organization_id,
+            )
+        )
+        if document is None:  # already gone (the job would have gone with it)
+            run.mark_removed_with_document()
+            return
+        storage_key, knowledge_base_id = document.storage_key, document.knowledge_base_id
+    try:
+        await run.storage.delete(storage_key)  # a missing file is fine (idempotent)
+    except StorageUnavailableError as exc:
+        raise TransientError("STORAGE_UNAVAILABLE", "File storage is unavailable.") from exc
+    async with run.session_factory() as session:
+        jobs = JobRepository(session)
+        removed = await jobs.delete_document_if_held(
+            claim.job_id, claim.attempt, claim.organization_id, claim.document_id
+        )
+        if not removed:  # no longer our job: write nothing
+            await session.rollback()
+            raise JobLostError(str(claim.job_id))
+        # Its knowledge base, if deleted and now empty, goes too.
+        await jobs.delete_empty_deleted_knowledge_bases(
+            organization_id=claim.organization_id, knowledge_base_id=knowledge_base_id
+        )
+        await session.commit()
+    logger.info("document.deleted", document_id=str(claim.document_id))
+    run.mark_removed_with_document()
+
+
+@shared_task(bind=True, name=DELETE_TASK)
+def delete_document(self: Task[Any, Any], job_id: str) -> str:
+    return execute_job_task(self, job_id, _delete_document)
+
+
 # --- reconciler (beat) --------------------------------------------------------------------
 
 
@@ -66,6 +128,7 @@ class ReconcileReport:
     failed_lease_expired: int
     reenqueued: int
     enqueue_failures: int
+    knowledge_bases_removed: int = 0
 
 
 async def reconcile(context: WorkerContext, queue: JobQueue) -> ReconcileReport:
@@ -84,6 +147,12 @@ async def reconcile(context: WorkerContext, queue: JobQueue) -> ReconcileReport:
             retrying_after_seconds=worker.stale_retrying_after_seconds,
             limit=worker.reconcile_batch_size,
         )
+    async with context.session_factory() as session:
+        # Deleted knowledge bases whose last document is gone (or that were empty).
+        removed_kbs = await JobRepository(session).delete_empty_deleted_knowledge_bases(
+            limit=worker.reconcile_batch_size
+        )
+        await session.commit()
     # A job recovered from an expired lease is enqueued at once (no need to wait).
     to_enqueue: dict[uuid.UUID, JobType] = {
         job.id: job.job_type for job in recovered if job.status is JobStatus.RETRYING
@@ -98,6 +167,7 @@ async def reconcile(context: WorkerContext, queue: JobQueue) -> ReconcileReport:
         failed_lease_expired=sum(job.status is JobStatus.FAILED for job in recovered),
         reenqueued=len(to_enqueue) - failures,
         enqueue_failures=failures,
+        knowledge_bases_removed=removed_kbs,
     )
     logger.info("reconcile.done", **asdict(report))
     return report

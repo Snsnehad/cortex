@@ -182,7 +182,7 @@ sequenceDiagram
 | Worker crash mid-job | Lease (`lease_expires_at`, renewed by heartbeat); the reconciler returns expired `RUNNING` jobs to `RETRYING` and enqueues them at once, or `FAILED` (`LEASE_EXPIRED`, document too) after `max_attempts`. A stalled worker that wakes up later is fenced out. |
 | Transient vs permanent errors | `TransientError` (network, 5xx, timeouts) → Celery retry with exponential backoff + jitter. `PermanentError` (corrupt/encrypted file, unsupported content) → `FAILED` immediately with `error_code`. |
 | PG ↔ Qdrant drift | No distributed transactions. PostgreSQL is the source of truth; Qdrant is a derived index. Reconciler compares per-document chunk counts with Qdrant `count(filter)` and re-indexes or purges orphans. |
-| Deletion | `DELETE` sets document `DELETING` (hidden from all reads immediately), enqueues cleanup: delete Qdrant points by filter → delete storage object → delete PG rows. Every step idempotent; reconciler retries stuck `DELETING` docs. |
+| Deletion | `DELETE` locks the document row and, in one transaction, sets `DELETING` (hidden from all reads immediately), cancels its active job (a worker holding it is fenced out) and queues a DELETE job, enqueued after the commit. The delete task removes the stored file (Phase 7: Qdrant points first), then the rows in one statement fenced by its claim (chunks and jobs cascade); a deleted knowledge base's row goes with its last document, and the reconciler removes empty deleted knowledge bases. Every step is idempotent; the reconciler retries stuck DELETE jobs like any other. |
 | Reprocessing | New `processing_job` (partial unique index allows only one active job per document). Same idempotent path. |
 
 ## 9. Retrieval & generation (RAG engine)
