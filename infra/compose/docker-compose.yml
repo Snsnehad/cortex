@@ -14,9 +14,49 @@
 # Application containers are opt-in via the "app" profile, because day-to-day development
 # runs the API on the host with --reload:
 #   docker compose -f infra/compose/docker-compose.yml --profile app up -d --build --wait
-# The containerised API listens on http://127.0.0.1:18000. Worker and beat: TASK-05.06.
+# The containerised API listens on http://127.0.0.1:18000.
+#
+# Background worker and scheduler (TASK-05.06) are opt-in too, via the "workers" profile:
+#   scripts\dev.cmd workers up      (or: docker compose ... --profile workers up -d worker beat)
+# They are kept small on purpose (memory limits below): one worker process, recycled every
+# 50 tasks so its memory cannot creep up. Raise worker.mem_limit when the embedding model
+# arrives (Phase 7).
 
 name: cortex
+
+# Shared by every backend container (api, worker, beat): one image, the same settings and
+# the same hardening. Inside the compose network services are reached by name on their
+# standard ports, so the host-oriented values from .env (127.0.0.1:15432, …) are overridden.
+x-backend: &backend
+  build:
+    context: ../../backend
+  image: cortex-backend:dev
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    qdrant:
+      condition: service_healthy
+  environment:
+    CORTEX_ENVIRONMENT: development
+    CORTEX_DATABASE__HOST: postgres
+    CORTEX_DATABASE__PORT: "5432"
+    CORTEX_DATABASE__USER: ${CORTEX_DATABASE__USER:-cortex}
+    CORTEX_DATABASE__PASSWORD: ${CORTEX_DATABASE__PASSWORD:-cortex}
+    CORTEX_DATABASE__NAME: ${CORTEX_DATABASE__NAME:-cortex}
+    CORTEX_REDIS__URL: redis://redis:6379/0
+    CORTEX_QDRANT__URL: http://qdrant:6333
+    CORTEX_WORKER__BROKER_URL: redis://redis:6379/1
+  volumes:
+    - storage_data:/data/storage
+  # Hardening: immutable root filesystem, no Linux capabilities, no privilege escalation.
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
 
 services:
   postgres:
@@ -102,40 +142,52 @@ services:
       start_period: 10s
 
   api:
+    <<: *backend
     profiles: ["app"]
-    build:
-      context: ../../backend
-    image: cortex-backend:dev
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-    # Inside the compose network services are reached by name on their standard ports,
-    # so the host-oriented values from .env (127.0.0.1:15432, …) are overridden here.
-    environment:
-      CORTEX_ENVIRONMENT: development
-      CORTEX_DATABASE__HOST: postgres
-      CORTEX_DATABASE__PORT: "5432"
-      CORTEX_DATABASE__USER: ${CORTEX_DATABASE__USER:-cortex}
-      CORTEX_DATABASE__PASSWORD: ${CORTEX_DATABASE__PASSWORD:-cortex}
-      CORTEX_DATABASE__NAME: ${CORTEX_DATABASE__NAME:-cortex}
-      CORTEX_REDIS__URL: redis://redis:6379/0
-      CORTEX_QDRANT__URL: http://qdrant:6333
     ports:
       - "127.0.0.1:18000:8000"
-    volumes:
-      - storage_data:/data/storage
-    # Hardening: immutable root filesystem, no Linux capabilities, no privilege escalation.
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
     # Health check is defined in the Dockerfile (liveness on /api/v1/health/live).
+
+  worker:
+    <<: *backend
+    profiles: ["workers"]
+    # One process; recycled after 50 tasks (caps slow memory growth); no startup banner.
+    # (--quiet is a top-level celery option: it must come before the subcommand.)
+    command:
+      - celery
+      - --quiet
+      - -A
+      - app.workers.celery_app
+      - worker
+      - --loglevel=INFO
+      - --concurrency=1
+      - --max-tasks-per-child=50
+    mem_limit: 512m
+    # Warm shutdown: the running task may finish. Anything still unfinished after this is
+    # requeued (acks_late + reject_on_worker_lost), never lost.
+    stop_grace_period: 60s
+    # The image's health check polls the API port, which a worker does not serve; a
+    # Celery-based check would start a whole Python process every interval (RAM churn).
+    healthcheck:
+      disable: true
+
+  beat:
+    <<: *backend
+    profiles: ["workers"]
+    # Exactly one beat may run. Its schedule state lives on the tmpfs (/tmp), so the
+    # read-only root filesystem stays read-only.
+    command:
+      - celery
+      - --quiet
+      - -A
+      - app.workers.celery_app
+      - beat
+      - --loglevel=INFO
+      - --schedule=/tmp/celerybeat-schedule
+    mem_limit: 192m
+    stop_grace_period: 10s
+    healthcheck:
+      disable: true
 
 volumes:
   postgres_data:

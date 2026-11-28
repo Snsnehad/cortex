@@ -60,7 +60,7 @@
 |---|---|
 | Lint/format (Py) | ruff (lint + format) |
 | Types (Py) | mypy (strict on `app/`) |
-| Tests (Py) | pytest, pytest-asyncio, httpx, respx (HTTP mocks), moto (S3), pytest-cov, pytest-randomly; celery-types (type stubs for Celery, dev only) |
+| Tests (Py) | pytest, pytest-asyncio, httpx, respx (HTTP mocks), moto (S3), pytest-cov, pytest-randomly; celery-types (type stubs for Celery, dev only); pyyaml + types-pyyaml (compose configuration tests, dev only) |
 | Load tests | Locust |
 | Security | pip-audit, npm audit, gitleaks |
 | Lint (TS) | ESLint + Prettier, `tsc --noEmit` |

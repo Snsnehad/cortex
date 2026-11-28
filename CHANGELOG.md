@@ -5,11 +5,13 @@ All notable changes to Cortex are documented here. Format based on [Keep a Chang
 ## [Unreleased]
 
 ### Fixed
+- 2026-11-28 — The containerised API now gets the broker address on the compose network (it would have tried to enqueue jobs to itself) [TASK-05.06].
 - 2026-11-27 — The local-storage symlink-escape test had silently become a skip on Linux CI after storage folders became lazy; it runs again, and may now skip only on Windows [TASK-04.05 follow-up].
 - 2026-11-27 — Local storage no longer creates folders when the app starts (it would fail on a read-only container filesystem); folders are created on the first upload [TASK-04.05].
 - 2026-11-27 — Local storage: temporary files now live in `<root>/.tmp/`, so real document paths stay under Windows' 260-character limit [TASK-04.04].
 
 ### Added
+- 2026-11-28 — Background worker and scheduler as opt-in Docker services (`scripts\dev.cmd workers up | down | logs`): never started by default, memory-limited (about 190 MiB together in use), hardened like the API, with a graceful shutdown that requeues unfinished work [TASK-05.06].
 - 2026-11-28 — Reprocess and delete documents: any member can reprocess a document (refused while it is being processed); the uploader or an admin can delete it, which hides it at once and removes its file and records in the background, safely repeatable; deleting a knowledge base now deletes its documents the same way and finally removes the knowledge base itself [TASK-05.05].
 - 2026-11-28 — Background jobs are started reliably: an upload enqueues its job only after it is saved (and still succeeds if the broker is down); a scheduled reconciler re-enqueues jobs whose message was lost and takes back jobs whose worker died, retrying or failing them; until document processing exists (Phase 6) documents fail plainly with `PROCESSING_NOT_AVAILABLE` [TASK-05.04].
 - 2026-11-28 — Retry handling for background jobs: temporary failures are retried after a randomized, growing delay while attempts remain; permanent failures (e.g. an encrypted PDF) fail at once with a clear code; unexpected errors are retried, logged once with their traceback, and never stored with their text; a job taken back mid-work stops without writing anything [TASK-05.03].

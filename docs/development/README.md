@@ -568,7 +568,7 @@ Code: `app/workers/` (`celery_app.py`, `runtime.py`, `tasks.py`). The worker run
 
 ```powershell
 docker compose -f infra/compose/docker-compose.yml --profile app build api
-docker compose -f infra/compose/docker-compose.yml --profile app run --rm --no-deps -e CORTEX_WORKER__BROKER_URL=redis://redis:6379/1 api celery -A app.workers.celery_app worker --loglevel=INFO --quiet
+docker compose -f infra/compose/docker-compose.yml --profile app run --rm --no-deps -e CORTEX_WORKER__BROKER_URL=redis://redis:6379/1 api celery --quiet -A app.workers.celery_app worker --loglevel=INFO
 ```
 
 **Writing a task** (delivery is at-least-once: every task must be safe to run twice):
@@ -641,3 +641,21 @@ async def _ingest(run: JobRun) -> dict[str, Any] | None:   # returns metrics for
 - Delete = `DELETING` + cancel active jobs + DELETE job, in one transaction; enqueue after the commit. A knowledge-base delete does the same for all its documents and returns the job ids to enqueue.
 - The delete task (`cortex.delete_document`) deletes the **file first, rows last** (rows keep the document invisible and retryable until everything else is gone), and the row delete is fenced by its claim. Phase 7 adds the Qdrant purge before the rows.
 - A work function that deletes its own job row (cascade) calls `run.mark_removed_with_document()`; `run_job` then reports SUCCEEDED instead of "lost".
+
+## Worker and beat containers (TASK-05.06)
+
+```powershell
+scripts\dev.cmd workers up -Build
+```
+```powershell
+scripts\dev.cmd workers logs -Follow
+```
+```powershell
+scripts\dev.cmd workers down
+```
+
+- Opt-in (`workers` profile): `dev up` never starts them. `up -Build` rebuilds the image (needed after code changes); plain `up` reuses it.
+- Sized for a small Docker VM: one worker process (`--concurrency=1`, recycled every 50 tasks), `mem_limit` 512 MiB worker / 192 MiB beat; measured in use: about 116 MiB and 76 MiB. Raise the worker's limit, not Docker's total, when a later phase needs more.
+- Same hardening as the API (read-only root, no capabilities, no-new-privileges); beat keeps its schedule file on `/tmp` (tmpfs). No health check: the image's check polls the API port, which these do not serve.
+- `down` stops them with SIGTERM (warm shutdown; 60 s grace for the worker), then removes the containers. Unfinished tasks are requeued (late acknowledgement), never lost.
+- `--quiet` is a **top-level** celery option: `celery --quiet -A app.workers.celery_app worker …` (after the subcommand celery refuses to start).

@@ -125,6 +125,8 @@ dev = [
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-randomly>=5.1.0",
+    "pyyaml>=6.0.4",
     "ruff>=0.17.6",
     "types-boto3[s3]>=1.44.12",
+    "types-pyyaml>=6.0.12.20261122",
 ]

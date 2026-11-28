@@ -23,6 +23,8 @@
         migrate [revision]    Apply migrations: latest by default; "-1" = one step back,
                               "base" = remove all, or a revision id.
         revision "message"    Autogenerate a migration from model changes (review it!).
+        workers up|down|logs  Start/stop the background worker and scheduler containers
+                              (opt-in; small memory limits). "up -Build" rebuilds the image.
         reset                 DESTRUCTIVE: delete all local Cortex data (volumes).
                               Asks you to type a confirmation phrase.
 #>
@@ -33,9 +35,10 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$Commands = @("help", "up", "down", "ps", "logs", "api", "test", "lint", "format", "check", "migrate", "revision", "reset")
+$Commands = @("help", "up", "down", "ps", "logs", "api", "test", "lint", "format", "check", "migrate", "revision", "workers", "reset")
 $Command = "help"
 $App = $false
+$Build = $false
 $Follow = $false
 $Port = 8000
 $Rest = @()
@@ -57,6 +60,7 @@ else {
     for ($i = 0; $i -lt $remaining.Count; $i++) {
         $arg = [string]$remaining[$i]
         if ($arg -eq "-App") { $App = $true }
+        elseif ($arg -eq "-Build") { $Build = $true }
         elseif ($arg -eq "-Follow") { $Follow = $true }
         elseif ($arg -eq "-Port" -and $i + 1 -lt $remaining.Count) { $i++; $Port = [int]$remaining[$i] }
         else { $Rest += $arg }
@@ -85,8 +89,9 @@ function Invoke-Native {
 function Get-ComposeArgs([switch]$WithAppProfile) {
     $composeArgs = @("compose", "-f", $ComposeFile)
     if (Test-Path $EnvFile) { $composeArgs += @("--env-file", $EnvFile) }
-    # The api service lives in the "app" profile; include it so down/ps/logs see it too.
-    if ($WithAppProfile) { $composeArgs += @("--profile", "app") }
+    # api ("app" profile), worker and beat ("workers") are opt-in; include them so that
+    # down/ps/logs see them too.
+    if ($WithAppProfile) { $composeArgs += @("--profile", "app", "--profile", "workers") }
     return $composeArgs
 }
 
@@ -190,6 +195,30 @@ try {
             Invoke-Tests $Rest
             Write-Host ""
             Write-Host "All checks passed." -ForegroundColor Green
+        }
+        "workers" {
+            Assert-Docker
+            $action = if ($Rest.Count -gt 0) { [string]$Rest[0] } else { "up" }
+            $workerArgs = (Get-ComposeArgs) + @("--profile", "workers")
+            switch ($action) {
+                "up" {
+                    Write-Step "Starting worker + beat (opt-in; memory-limited)"
+                    $upArgs = $workerArgs + @("up", "-d")
+                    if ($Build) { $upArgs += "--build" }
+                    Invoke-Native "docker" ($upArgs + @("worker", "beat"))
+                }
+                "down" {
+                    Write-Step "Stopping worker + beat (running tasks finish or are requeued)"
+                    Invoke-Native "docker" ($workerArgs + @("stop", "worker", "beat"))
+                    Invoke-Native "docker" ($workerArgs + @("rm", "-f", "worker", "beat"))
+                }
+                "logs" {
+                    $logArgs = $workerArgs + @("logs", "--tail", "200")
+                    if ($Follow) { $logArgs += "--follow" }
+                    Invoke-Native "docker" ($logArgs + @("worker", "beat"))
+                }
+                default { throw "Unknown workers action '$action'. Use: up, down or logs." }
+            }
         }
         "reset" {
             Assert-Docker
