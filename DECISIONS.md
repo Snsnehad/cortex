@@ -68,6 +68,8 @@ Format: short ADRs (context → decision → consequences). All ADRs below were 
 * **Context**: PyMuPDF is faster/better on layout but AGPL-licensed; pypdf is BSD and pure Python.
 * **Decision**: pypdf for MVP behind the parser protocol; PyMuPDF/pdfplumber can be swapped in later if quality measurements justify it and licensing is acceptable.
 * **Consequences**: Somewhat weaker multi-column/table handling; mitigated by cleaner and measured via eval set.
+* **Note (2026-11-28, TASK-06.01)**: installed as `pypdf[crypto]`. Many PDFs are AES-encrypted with an *empty* user password (restrictions only); decrypting them needs `cryptography`, which was otherwise only a dev dependency. Text uses pypdf's default ("plain") mode, which keeps multi-column text column by column; "layout" mode interleaves columns line by line.
+
 
 ### ADR-010 — Upload and delete permissions
 * **Status**: Accepted (2026-11-26) (see P-3)

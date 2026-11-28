@@ -3,7 +3,7 @@
 > Source of truth for **status**. Definitions and completion conditions live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 > A task is `COMPLETED` only when: implementation finished, relevant tests **executed and passing**, acceptance criteria met, docs updated.
 > Statuses: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `COMPLETED` · `NEEDS_REVIEW`
-> Last updated: 2026-11-28 (Session 2, after TASK-05.06; Phase 5 complete)
+> Last updated: 2026-11-28 (Session 2, after TASK-06.01)
 
 ## Summary
 
@@ -15,7 +15,7 @@
 | PHASE-03 | Auth & multi-tenancy | COMPLETED | 9 / 9 |
 | PHASE-04 | Upload & storage | COMPLETED | 6 / 6 |
 | PHASE-05 | Background processing | COMPLETED | 6 / 6 |
-| PHASE-06 | Extraction & chunking | NOT_STARTED | 0 / 7 |
+| PHASE-06 | Extraction & chunking | IN_PROGRESS | 1 / 7 |
 | PHASE-07 | Embeddings & Qdrant | NOT_STARTED | 0 / 7 (+1 stretch) |
 | PHASE-08 | Dense & sparse retrieval | NOT_STARTED | 0 / 5 |
 | PHASE-09 | Hybrid & reranking | NOT_STARTED | 0 / 4 |
@@ -28,8 +28,8 @@
 | PHASE-16 | Production deployment | NOT_STARTED | 0 / 5 |
 | PHASE-17 | Documentation & portfolio | NOT_STARTED | 0 / 4 |
 
-**Current task:** TASK-06.01 — parser protocol → `ParsedDocument(pages | sections)`; PDF parser per page (pypdf, ADR-009); encrypted / empty / scanned detection (`PDF_ENCRYPTED`, `EXTRACTION_EMPTY`).
-**Next task:** TASK-06.02 (DOCX parser with real decompression limits).
+**Current task:** TASK-06.02 — DOCX parser: paragraphs, headings → section path, tables → row text; real decompression limits (zip-bomb guard on actual bytes, not only declared sizes).
+**Next task:** TASK-06.03 (TXT/MD parser; first resolve the encoding question: intake accepts UTF-8 only, ADR-023).
 
 ## Known blockers
 
@@ -125,7 +125,7 @@ Column key: **Dep** = dependencies · **Files** = created/modified · **Tests** 
 
 | ID | Description | Status | Dep | Files | Tests | Result | Notes / remaining |
 |---|---|---|---|---|---|---|---|
-| TASK-06.01 | PDF parser | NOT_STARTED | 05.03 | | | | |
+| TASK-06.01 | PDF parser | COMPLETED | 05.03 | app/rag/ingestion/parsed.py (TextBlock with page / heading_path, ParsedDocument, Parser protocol, ExtractionError), app/rag/ingestion/pdf.py (PdfParser: per-page blocks, empty-password decryption, PDF_ENCRYPTED / PDF_INVALID / EXTRACTION_EMPTY with scan detection, failed pages tolerated and counted), pyproject.toml/uv.lock (pypdf[crypto] 7.2.0), DECISIONS.md (ADR-009 note), TECH_STACK.md, docs/development/README.md | tests/unit/test_pdf_parser.py (20; PDFs generated at test time with pypdf, no binary fixtures) | ruff · mypy · pytest 906 passed, 1 skipped · one block per page with page numbers; blank pages skipped, numbering kept · two columns come out column by column (layout mode would interleave: mutant killed) · WinAnsi characters (é, %, parentheses) survive · real password (RC4-128, AES-128, AES-256) → PDF_ENCRYPTED; empty user password (all three) opens · image-only → EXTRACTION_EMPTY mentioning OCR; no text, no images → EXTRACTION_EMPTY; partly scanned keeps its text pages · garbage/empty/not-PDF → PDF_INVALID · one failing page skipped and counted; all failing → PDF_INVALID · messages never contain document text · mutations: 8 of 9 killed; the survivor showed `file.seek(0)` is redundant (pypdf positions the stream itself), so it was removed | `cryptography` was only a dev dependency (via moto); without it in production, AES PDFs with an empty password (common: print/copy restrictions only) would have been wrongly refused, hence `pypdf[crypto]`. Page/character limits are TASK-06.07. Open question for 06.03: the plan expects UTF-16/cp1252 text, but intake accepts UTF-8 only (ADR-023). |
 | TASK-06.02 | DOCX parser + zip-bomb guard | NOT_STARTED | 06.01 | | | | |
 | TASK-06.03 | TXT/MD parser | NOT_STARTED | 06.01 | | | | |
 | TASK-06.04 | Text cleaner with offset map | NOT_STARTED | 06.01 | | | | |

@@ -659,3 +659,17 @@ scripts\dev.cmd workers down
 - Same hardening as the API (read-only root, no capabilities, no-new-privileges); beat keeps its schedule file on `/tmp` (tmpfs). No health check: the image's check polls the API port, which these do not serve.
 - `down` stops them with SIGTERM (warm shutdown; 60 s grace for the worker), then removes the containers. Unfinished tasks are requeued (late acknowledgement), never lost.
 - `--quiet` is a **top-level** celery option: `celery --quiet -A app.workers.celery_app worker …` (after the subcommand celery refuses to start).
+
+## Parsing documents (TASK-06.01)
+
+`app/rag/ingestion/`: every parser implements `Parser.parse(file) -> ParsedDocument` (synchronous, CPU-bound: call it from a thread). A `ParsedDocument` is an ordered list of `TextBlock(text, page, heading_path)`: PDFs fill `page`, structured formats fill `heading_path`. Unusable files raise `ExtractionError(code, message)`; the message is shown to users, so it never contains document text.
+
+| PDF situation | Result |
+|---|---|
+| text pages | one block per page, page numbers kept (blank pages skipped, counted in `stats`) |
+| "encrypted" with an empty password (print/copy restrictions) | opens normally |
+| real password | `PDF_ENCRYPTED` |
+| only images (scan) / no text at all | `EXTRACTION_EMPTY` (the scan message mentions that OCR is not supported) |
+| damaged, not a PDF | `PDF_INVALID`; a single bad page is skipped and counted instead |
+
+Tests build their PDFs with pypdf (`tests/unit/test_pdf_parser.py: make_pdf`); give fonts an `/Encoding` (WinAnsi), as real PDFs do.
