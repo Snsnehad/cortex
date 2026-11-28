@@ -18,10 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.main import create_app
-from app.models import Document, ProcessingJob
+from app.models import Document, JobStatus, ProcessingJob
 from app.repositories.documents import DocumentRepository
 from app.storage.local import LocalStorage
-from tests.integration.api_helpers import Api, code, team
+from tests.integration.api_helpers import Api, RecordingJobQueue, code, team
 from tests.integration.factories import create_kb
 from tests.unit.test_upload_detect import make_docx
 
@@ -285,6 +285,8 @@ async def test_document_and_job_are_one_transaction(
 class _AppClient:
     def __init__(self, settings: Settings) -> None:
         self.app = create_app(settings)
+        self.app.state.job_queue.close()
+        self.app.state.job_queue = RecordingJobQueue()
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=self.app), base_url="http://test"
         )
@@ -345,3 +347,40 @@ async def test_openapi_documents_the_multipart_body(api_app: FastAPI) -> None:
     schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
     assert schema["required"] == ["file"]
     assert schema["properties"]["file"]["format"] == "binary"
+
+
+# --- enqueueing (TASK-05.04) ----------------------------------------------------------------
+
+
+async def test_upload_enqueues_the_job_after_it_is_saved(
+    api_app: FastAPI, api_client: httpx.AsyncClient, world: Any
+) -> None:
+    response = await upload(api_app, api_client, world)
+
+    assert response.status_code == 202
+    job_id = response.json()["job"]["id"]
+    assert [str(j) for j in api_app.state.job_queue.enqueued] == [job_id]
+
+
+async def test_upload_succeeds_even_if_the_broker_is_down(
+    api_app: FastAPI, api_client: httpx.AsyncClient, session_factory: Factory, world: Any
+) -> None:
+    api_app.state.job_queue = RecordingJobQueue(available=False)
+
+    response = await upload(api_app, api_client, world)
+
+    assert response.status_code == 202  # the reconciler will enqueue the QUEUED job later
+    async with session_factory() as session:
+        job = await session.get(ProcessingJob, response.json()["job"]["id"])
+    assert job is not None
+    assert job.status is JobStatus.QUEUED
+
+
+async def test_refused_uploads_enqueue_nothing(
+    api_app: FastAPI, api_client: httpx.AsyncClient, world: Any
+) -> None:
+    await upload(api_app, api_client, world)  # the original: enqueued once
+    await upload(api_app, api_client, world, filename="copy.md")  # duplicate → 409
+    await upload(api_app, api_client, world, b"", "empty.txt")  # empty → 422
+
+    assert len(api_app.state.job_queue.enqueued) == 1

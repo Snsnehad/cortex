@@ -183,6 +183,17 @@ class WorkerSettings(BaseModel):
     # failed together (e.g. an LLM outage) spread out instead of arriving in waves.
     retry_backoff_base_seconds: int = Field(default=10, ge=1)
     retry_backoff_max_seconds: int = Field(default=600, ge=1)
+    # Reconciler (beat, every `reconcile_interval_seconds`): re-enqueue QUEUED jobs idle
+    # longer than `stale_queued_after_seconds` (their message was probably lost) and
+    # RETRYING jobs idle longer than `stale_retrying_after_seconds` (must exceed the
+    # largest backoff, or a job still waiting out its delay would be enqueued twice).
+    reconcile_interval_seconds: int = Field(default=60, ge=10)
+    stale_queued_after_seconds: int = Field(default=600, ge=60)
+    stale_retrying_after_seconds: int = Field(default=900, ge=60)
+    reconcile_batch_size: int = Field(default=500, ge=1, le=10_000)
+    # How long the API waits for the broker when enqueueing (Redis down → upload still
+    # succeeds; the job stays QUEUED for the reconciler).
+    enqueue_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
     @model_validator(mode="after")
     def _check_limits(self) -> Self:
@@ -190,6 +201,10 @@ class WorkerSettings(BaseModel):
             raise ValueError("worker.task_time_limit_seconds must exceed the soft limit")
         if self.visibility_timeout_seconds <= self.task_time_limit_seconds:
             raise ValueError("worker.visibility_timeout_seconds must exceed task_time_limit")
+        if self.stale_retrying_after_seconds <= self.retry_backoff_max_seconds:
+            raise ValueError(
+                "worker.stale_retrying_after_seconds must exceed retry_backoff_max_seconds"
+            )
         return self
 
 

@@ -132,3 +132,18 @@ def test_shutdown_leaves_a_parents_context_alone(monkeypatch: pytest.MonkeyPatch
     runtime.shutdown()  # in the child: must not dispose the parent's engine or loop
 
     assert not parent.runner.get_loop().is_closed()
+
+
+def test_the_reconciler_is_scheduled_and_its_ticks_expire() -> None:
+    schedule = create_celery(settings(reconcile_interval_seconds=45)).conf.beat_schedule
+
+    entry = schedule["reconcile-jobs"]
+    assert entry["task"] == "cortex.reconcile_jobs"
+    assert entry["schedule"] == 45.0
+    # A tick nobody consumes (no worker running) expires instead of piling up in Redis.
+    assert entry["options"]["expires"] == 45.0
+
+
+def test_retrying_jobs_are_not_considered_lost_before_the_longest_backoff() -> None:
+    with pytest.raises(ValidationError, match="stale_retrying_after_seconds"):
+        WorkerSettings(retry_backoff_max_seconds=900, stale_retrying_after_seconds=900)

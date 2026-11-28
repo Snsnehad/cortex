@@ -65,6 +65,15 @@ def create_celery(settings: Settings) -> Celery:
         worker_hijack_root_logger=False,
         worker_redirect_stdouts=False,
         worker_send_task_events=False,
+        # Beat: the reconciler. Each tick's message expires after one interval, so ticks
+        # never pile up in Redis while no worker is running.
+        beat_schedule={
+            "reconcile-jobs": {
+                "task": "cortex.reconcile_jobs",
+                "schedule": float(worker.reconcile_interval_seconds),
+                "options": {"expires": float(worker.reconcile_interval_seconds)},
+            }
+        },
     )
     runtime.configure(settings)
     return app

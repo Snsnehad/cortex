@@ -13,7 +13,9 @@ Upload order matters, cheapest refusal first:
 4. the body is streamed with the size limit enforced on arrival (ADR-023) → 400/413;
 5. the type is detected from the bytes → 415/422;
 6. ``DocumentService.add``: duplicate check, storage, document + job in one transaction
-   → 409 or **202** ``{document, job}``.
+   → 409 or **202** ``{document, job}``;
+7. only then, after the commit, the job is enqueued (in a worker thread; a broker failure is
+   logged and the job stays QUEUED for the reconciler, the upload still succeeds).
 
 The route takes the raw ``Request`` instead of an ``UploadFile`` parameter on purpose:
 ``UploadFile`` would make FastAPI receive the whole body before step 1 even runs.
@@ -23,12 +25,14 @@ import uuid
 from enum import StrEnum
 from typing import Annotated
 
+from anyio import to_thread
 from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
 
 from app.dependencies.database import DbSession
 from app.dependencies.orgs import OrgContextDep
 from app.dependencies.pagination import CursorCodecDep, PageParams
+from app.dependencies.queue import JobQueueDep
 from app.dependencies.rate_limit import RateLimitsDep
 from app.dependencies.settings import SettingsDep
 from app.dependencies.storage import StorageDep
@@ -80,6 +84,7 @@ async def upload_document(
     storage: StorageDep,
     settings: SettingsDep,
     rate_limits: RateLimitsDep,
+    queue: JobQueueDep,
 ) -> DocumentAccepted:
     await rate_limits.check(rate_limits.upload_user, str(ctx.user_id), fail_closed=False)
     service = DocumentService(session, storage)
@@ -90,6 +95,8 @@ async def upload_document(
         added = await service.add(ctx, kb_id, upload, detected)
     finally:
         upload.close()
+    # After the commit inside `add`: the worker can never see a message before its row.
+    await to_thread.run_sync(queue.enqueue_ingest, added.job.id)
     return DocumentAccepted.from_domain(added)
 
 

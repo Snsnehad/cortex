@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
+from anyio import to_thread
 from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
@@ -27,6 +28,7 @@ from app.database.session import create_engine, create_session_factory
 from app.dependencies.rate_limit import RateLimitGuard
 from app.middleware.request_context import RequestContextMiddleware
 from app.storage import create_storage
+from app.workers.queue import CeleryJobQueue, create_producer
 
 API_V1_PREFIX = "/api/v1"
 APP_VERSION = "0.1.0"
@@ -43,6 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.db_engine.dispose()
     await app.state.redis.aclose()
     await app.state.storage.aclose()
+    await to_thread.run_sync(app.state.job_queue.close)
     logger.info("app.shutdown", db_pool="disposed", redis="closed", storage="closed")
 
 
@@ -86,6 +89,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     # File storage (local or S3). Building it touches neither disk nor network.
     app.state.storage = create_storage(settings.storage)
+    # Enqueues background jobs (a producer only; connects on first use).
+    app.state.job_queue = CeleryJobQueue(create_producer(settings))
     app.include_router(api_router, prefix=API_V1_PREFIX)
     register_exception_handlers(app)
     app.add_middleware(RequestContextMiddleware, quiet_paths=HEALTH_PATHS)

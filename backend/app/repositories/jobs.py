@@ -15,7 +15,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -28,6 +28,7 @@ from app.models import (
 )
 
 CLAIMABLE = (JobStatus.QUEUED, JobStatus.RETRYING)
+LEASE_EXPIRED = "LEASE_EXPIRED"
 
 
 class JobRepository:
@@ -123,3 +124,72 @@ class JobRepository:
             .execution_options(populate_existing=True)
         )
         return job
+
+    # --- reconciler (TASK-05.04) -----------------------------------------------------------
+
+    async def recover_expired_leases(self, *, limit: int) -> list[ProcessingJob]:
+        """RUNNING jobs whose lease has passed (their worker died): back to RETRYING, or
+        FAILED with LEASE_EXPIRED when no attempts remain. One statement; rows another
+        reconciler is handling are skipped (SKIP LOCKED)."""
+        expired = (
+            select(ProcessingJob.id)
+            .where(
+                ProcessingJob.status == JobStatus.RUNNING,
+                ProcessingJob.lease_expires_at < func.now(),
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        will_retry = ProcessingJob.attempts < ProcessingJob.max_attempts
+        rows = await self._session.scalars(
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.id.in_(expired),
+                ProcessingJob.status == JobStatus.RUNNING,
+                ProcessingJob.lease_expires_at < func.now(),
+            )
+            .values(
+                status=case((will_retry, JobStatus.RETRYING.value), else_=JobStatus.FAILED.value),
+                finished_at=case((will_retry, None), else_=func.now()),
+                lease_expires_at=None,
+                stage=None,
+                error_code=LEASE_EXPIRED,
+                error_message="The worker processing this document stopped responding.",
+            )
+            .returning(ProcessingJob)
+            .execution_options(populate_existing=True, synchronize_session=False)
+        )
+        return list(rows.all())
+
+    async def touch_stale(
+        self, *, queued_after: timedelta, retrying_after: timedelta, limit: int
+    ) -> list[ProcessingJob]:
+        """QUEUED/RETRYING jobs idle too long (their message was probably lost). They are
+        stamped (updated_at = now) in the same statement, so the next run does not pick
+        them again until they are idle again; SKIP LOCKED keeps two reconcilers apart."""
+        stale = (
+            select(ProcessingJob.id)
+            .where(
+                or_(
+                    and_(
+                        ProcessingJob.status == JobStatus.QUEUED,
+                        ProcessingJob.updated_at < func.now() - queued_after,
+                    ),
+                    and_(
+                        ProcessingJob.status == JobStatus.RETRYING,
+                        ProcessingJob.updated_at < func.now() - retrying_after,
+                    ),
+                )
+            )
+            .order_by(ProcessingJob.updated_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        rows = await self._session.scalars(
+            update(ProcessingJob)
+            .where(ProcessingJob.id.in_(stale), ProcessingJob.status.in_(CLAIMABLE))
+            .values(updated_at=func.now())
+            .returning(ProcessingJob)
+            .execution_options(populate_existing=True, synchronize_session=False)
+        )
+        return list(rows.all())

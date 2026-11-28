@@ -88,7 +88,9 @@ def test_a_real_worker_consumes_from_redis(test_settings: Settings) -> None:
             record.delay("hello from the producer")
             assert done.wait(timeout=20), "the worker never ran the task"
     finally:
-        broker.delete(queue)
+        # The queue and Celery's routing keys for it: nothing may pile up in Redis.
+        for key in broker.scan_iter(match=f"*{queue}*"):
+            broker.delete(key)
         broker.close()
         runtime.shutdown()
 

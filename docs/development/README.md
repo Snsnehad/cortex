@@ -627,3 +627,10 @@ async def _ingest(run: JobRun) -> dict[str, Any] | None:   # returns metrics for
 
 - `run.heartbeat()` raising `JobLostError` means the job is someone else's now: let it propagate; nothing is written and it is logged as a warning, not an error.
 - Attempts are counted on the job row, never by Celery's retry counter.
+
+## Enqueueing and the reconciler (TASK-05.04)
+
+- **Enqueue only after the commit**, from a thread: `await to_thread.run_sync(queue.enqueue_ingest, job.id)` with `queue: JobQueueDep`. It returns False (and logs `job.enqueue_failed`) when the broker is down; never fail the request over it: the reconciler will enqueue the job.
+- The API's Celery app is a producer with short broker timeouts (`CORTEX_WORKER__ENQUEUE_TIMEOUT_SECONDS`); do not reuse it in workers.
+- **Reconciler** (`cortex.reconcile_jobs`, beat every `CORTEX_WORKER__RECONCILE_INTERVAL_SECONDS`): expired RUNNING leases → RETRYING (enqueued at once) or FAILED `LEASE_EXPIRED`; QUEUED idle > `STALE_QUEUED_AFTER_SECONDS` and RETRYING idle > `STALE_RETRYING_AFTER_SECONDS` → re-enqueued and stamped. Safe to run any number of times, also concurrently.
+- **Tests:** API tests get an in-memory `RecordingJobQueue` (`app.state.job_queue`), so nothing is published to your Redis; call `reconcile(context, queue)` directly instead of running beat. A test that must use the real broker uses a unique queue and deletes every key matching it afterwards.

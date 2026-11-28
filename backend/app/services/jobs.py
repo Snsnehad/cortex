@@ -26,7 +26,7 @@ claim, READY on success, FAILED when the job fails for good (a retry keeps it PR
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import case, func
@@ -157,6 +157,32 @@ class JobService:
             claim, job, "job.failed", error_code=error_code, status=job.status if job else None
         )
         return job.status if job is not None else None
+
+    async def recover_expired_leases(self, *, limit: int) -> list[ProcessingJob]:
+        """Reconciler: jobs whose worker died. INGEST documents of jobs that failed for
+        good are marked FAILED in the same transaction."""
+        jobs = await self._jobs.recover_expired_leases(limit=limit)
+        for job in jobs:
+            if job.status is JobStatus.FAILED and job.job_type is JobType.INGEST:
+                await self._jobs.set_document_status(
+                    job,
+                    DocumentStatus.FAILED,
+                    error_code=job.error_code,
+                    error_message=job.error_message,
+                )
+        await self._session.commit()
+        return jobs
+
+    async def take_stale_for_enqueue(
+        self, *, queued_after_seconds: int, retrying_after_seconds: int, limit: int
+    ) -> list[ProcessingJob]:
+        jobs = await self._jobs.touch_stale(
+            queued_after=timedelta(seconds=queued_after_seconds),
+            retrying_after=timedelta(seconds=retrying_after_seconds),
+            limit=limit,
+        )
+        await self._session.commit()
+        return jobs
 
     async def cancel(self, job_id: uuid.UUID) -> bool:
         job = await self._jobs.cancel_active(job_id)

@@ -38,7 +38,7 @@ import app.models  # noqa: F401  (every table on Base.metadata)
 from app.config import Settings
 from app.database.base import Base
 from app.main import create_app
-from tests.integration.api_helpers import Api
+from tests.integration.api_helpers import Api, RecordingJobQueue
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
@@ -157,6 +157,8 @@ def test_settings(migrated_database_url: str, tmp_path: Path) -> Settings:
 async def api_app(test_settings: Settings, db_engine: AsyncEngine) -> AsyncIterator[FastAPI]:
     # Depends on db_engine so the tables are emptied after the test.
     application = create_app(test_settings)
+    application.state.job_queue.close()
+    application.state.job_queue = RecordingJobQueue()  # never the developer's broker
     yield application
     await application.state.db_engine.dispose()
     await application.state.redis.aclose()
